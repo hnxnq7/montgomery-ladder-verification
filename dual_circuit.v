@@ -17,10 +17,14 @@ Section HammingWeight.
   (* ══════════════════════════════════════════════════════════════════════════
      Field arithmetic — bitvector versions of fadd/fsub/fmul (reduction mod p)
      ══════════════════════════════════════════════════════════════════════════ *)
-  Definition fadd_bv (a b : bv n) : bv n := bv_modu (bv_add a b) p .
-  Definition fsub_bv (a b : bv n) : bv n := bv_modu (bv_sub a b) p.
-  Definition fmul_bv (a b : bv n) : bv n := bv_modu (bv_mul a b) p.
-  Definition fsq_bv  (a : bv n)   : bv n := fmul_bv a a.
+  Definition fadd_bv (a b : bv n) : bv n :=
+    bv_modu (bv_add a b) p .
+  Definition fsub_bv (a b : bv n) : bv n :=
+    bv_modu (bv_sub a b) p.
+  Definition fmul_bv (a b : bv n) : bv n :=
+    bv_modu (bv_mul a b) p.
+  Definition fsq_bv  (a : bv n)   : bv n :=
+    fmul_bv a a.
 
   (* ══════════════════════════════════════════════════════════════════════════
      Probabilistic model — infrastructure for a future information-theoretic
@@ -57,18 +61,21 @@ Section HammingWeight.
     | Prob_random, Prob_random => Prob_unknown
     end.
   
-  Definition fadd_probvar (a b : ProbVar) : ProbVar := {|
+  Definition fadd_probvar (a b : ProbVar) : ProbVar :=
+    {|
     Value := fadd_bv a.(Value) b.(Value);
     Ptype := faddsub_prob a.(Ptype) b.(Ptype)
   |}.
 
   (* NEW: sub and mul *)
-  Definition fsub_probvar (a b : ProbVar) : ProbVar := {|
+  Definition fsub_probvar (a b : ProbVar) : ProbVar :=
+    {|
     Value := fsub_bv a.(Value) b.(Value);
     Ptype := faddsub_prob a.(Ptype) b.(Ptype)
   |}.
 
-  Definition fmul_probvar (a b : ProbVar) : ProbVar := {|
+  Definition fmul_probvar (a b : ProbVar) : ProbVar :=
+    {|
     Value := fmul_bv a.(Value) b.(Value);
     Ptype := fmul_prob a.(Ptype) b.(Ptype)
   |}.
@@ -84,7 +91,8 @@ Section HammingWeight.
   (* ══════════════════════════════════════════════════════════════════════════
      Register machine ISA — toy language used to model LadderStep execution
      ══════════════════════════════════════════════════════════════════════════ *)
-  Definition var := nat.
+  Definition var :=
+    nat.
 
   Inductive instr : Type :=
     (* | Constant (c : ProbVar)
@@ -150,27 +158,36 @@ Section HammingWeight.
   (* todo: reuse registers --> use less regs *)
     (* program counter & fetch memory *)
 
-  Definition ProbEnv := list ProbVar.
+  Definition ProbEnv :=
+    list ProbVar.
 
-  Definition prob_default_var : ProbVar := {|
+  Definition prob_default_var : ProbVar :=
+    {|
     Value := bv_0 n;
     Ptype := Prob_unknown
   |}.
   
   (* secret register & public register --> only do dual circuits on the secret *)
 
-  Definition prob_read_register (env : ProbEnv) (i : var) : ProbVar := nth i env prob_default_var.
-  Definition prob_write_register (env : ProbEnv) (i : var) (data : ProbVar) : ProbEnv := list_insert i data env.
+  Definition prob_read_register (env : ProbEnv) (i : var) : ProbVar :=
+    nth i env prob_default_var.
+  Definition prob_write_register (env : ProbEnv) (i : var) (data : ProbVar) : ProbEnv :=
+    list_insert i data env.
 
-  Definition num_true (bools : list bool) : nat := fold_left (fun (acc : nat) (b : bool) => if b then acc + 1 else acc) bools 0.
+  Definition num_true (bools : list bool) : nat :=
+    fold_left (fun (acc : nat) (b : bool) => if b then acc + 1 else acc) bools 0.
 
-  Definition HW (a : bv n) : nat := num_true (bv_to_bits a).
+  Definition HW (a : bv n) : nat :=
+    num_true (bv_to_bits a).
 
-  Definition num_1s (a : bv n) : nat := num_true (bv_to_bits a).
+  Definition num_1s (a : bv n) : nat :=
+    num_true (bv_to_bits a).
   
-  Definition num_1s_in_list (bvs : list (bv n)) : nat := fold_left (fun acc pv => acc + HW pv) bvs 0.
+  Definition num_1s_in_list (bvs : list (bv n)) : nat :=
+    fold_left (fun acc pv => acc + HW pv) bvs 0.
 
-  Definition num_1s_in_env (env : ProbEnv) : nat := num_1s_in_list (map Value env).
+  Definition num_1s_in_env (env : ProbEnv) : nat :=
+    num_1s_in_list (map Value env).
 
   Inductive Observation :=
     | RegObservation (r : var) (val : (bv n)).
@@ -193,12 +210,16 @@ Section HammingWeight.
 
     (* ── Operational semantics ───────────────────────────────────────────── *)
 
-    Definition Env := list (bv n).
+    Definition Env :=
+      list (bv n).
     Record state := { env : Env; denv : Env }.
 
-    Definition default_var : bv n := bv_0 n.
-    Definition read_register  (env : Env) (i : var) : bv n      := nth i env default_var.
-    Definition write_register (env : Env) (i : var) (data : bv n) : Env := list_insert i data env.
+    Definition default_var : bv n :=
+      bv_0 n.
+    Definition read_register  (env : Env) (i : var) : bv n      :=
+      nth i env default_var.
+    Definition write_register (env : Env) (i : var) (data : bv n) : Env :=
+      list_insert i data env.
 
     Definition interp_instr (env : Env) (e : instr) : Env * list Observation :=
       match e with
@@ -214,21 +235,26 @@ Section HammingWeight.
       ({| env := env'; denv := map bv_not env' |}, obs).
 
     (* run first [steps] instructions, accumulating observations *)
-    Definition run (s : state) (prog : list instr) (steps : nat) : state * list Observation := fold_left (fun '(s_acc, obs_acc) e => let '(s', new_obs) := dual_interp_instr s_acc e in (s', obs_acc ++ new_obs)) (firstn steps prog) (s, []).
+    Definition run (s : state) (prog : list instr) (steps : nat) : state * list Observation :=
+      fold_left (fun '(s_acc, obs_acc) e => let '(s', new_obs) := dual_interp_instr s_acc e in (s', obs_acc ++ new_obs)) (firstn steps prog) (s, []).
 
       
 
     (* Security definitions *)
 
     (* invariant: denv is always the bitwise complement of env *)
-    Definition valid_state (s : state) : Prop := s.(denv) = map bv_not s.(env).
+    Definition valid_state (s : state) : Prop :=
+      s.(denv) = map bv_not s.(env).
 
-    Definition is_complement (e1 e2 : Env) : Prop := forall i, read_register e2 i = bv_not (read_register e1 i).
+    Definition is_complement (e1 e2 : Env) : Prop :=
+      forall i, read_register e2 i = bv_not (read_register e1 i).
 
-    Definition num_1s_in_state (s : state) : nat := num_1s_in_list s.(env) + num_1s_in_list s.(denv).
+    Definition num_1s_in_state (s : state) : nat :=
+      num_1s_in_list s.(env) + num_1s_in_list s.(denv).
 
     (* security: total HW per cycle is constant regardless of secret *)
-    Definition secure (prog : list instr) (s : state) := exists c, forall steps, num_1s_in_state (run s prog steps).1 = c.
+    Definition secure (prog : list instr) (s : state) :=
+      exists c, forall steps, num_1s_in_state (run s prog steps).1 = c.
 
 
 
@@ -457,16 +483,20 @@ Section HammingWeight.
       end.
 
     (* sum HW only over a given list of register indices *)
-    Definition num_1s_regs (env : Env) (regs : list var) : nat := fold_left (fun acc r => acc + HW (read_register env r)) regs 0.
+    Definition num_1s_regs (env : Env) (regs : list var) : nat :=
+      fold_left (fun acc r => acc + HW (read_register env r)) regs 0.
 
     (* secret register indices for the ladder program *)
-    Definition ladder_secret_regs : list var := [rX2; rZ2; rX3; rZ3; rU; rV; rW; rT; rU2; rV2; rUT; rVW; rSp; rSm; rX3'; rSm2; rZ3'; rX2'; rD; rAD; rT2; rZ2'].
+    Definition ladder_secret_regs : list var :=
+      [rX2; rZ2; rX3; rZ3; rU; rV; rW; rT; rU2; rV2; rUT; rVW; rSp; rSm; rX3'; rSm2; rZ3'; rX2'; rD; rAD; rT2; rZ2'].
 
     (* total HW of secret registers across both sides of dual circuit *)
-    Definition num_1s_secret_state (s : state) (regs : list var) : nat := num_1s_regs s.(env) regs + num_1s_regs s.(denv) regs.
+    Definition num_1s_secret_state (s : state) (regs : list var) : nat :=
+      num_1s_regs s.(env) regs + num_1s_regs s.(denv) regs.
 
     (* security focused on secret registers only *)
-    Definition secure_secret (prog : list instr) (s : state) (regs : list var) := exists c, forall steps, num_1s_secret_state (run s prog steps).1 regs = c.
+    Definition secure_secret (prog : list instr) (s : state) (regs : list var) :=
+      exists c, forall steps, num_1s_secret_state (run s prog steps).1 regs = c.
 
     (* helper: reading from a complemented env gives the complement *)
     Lemma read_register_map_not : forall (env : Env) (r : var), r < length env -> read_register (map bv_not env) r = bv_not (read_register env r).
@@ -565,18 +595,24 @@ Section HammingWeight.
     (* Generalised public/secret classification
        declare a list of public registers --> derive the classify function from it *)
 
-    Definition classify_by_list (pub : list var) (r : var) : RegClass := if decide (r ∈ pub) then PublicReg else SecretReg.
+    Definition classify_by_list (pub : list var) (r : var) : RegClass :=
+      if decide (r ∈ pub) then PublicReg else SecretReg.
 
     (* Retrofit the original program with the general classifier *)
-    Definition ladder_public_regs : list var := [rX1; rA24].  (* 0 and 5     *)
-    Definition ladder_classify' : var -> RegClass := classify_by_list ladder_public_regs.
+    Definition ladder_public_regs : list var :=
+      [rX1; rA24].  (* 0 and 5     *)
+    Definition ladder_classify' : var -> RegClass :=
+      classify_by_list ladder_public_regs.
 
     (* Compact program: same two public inputs, same physical register slots  *)
-    Definition compact_public_regs : list var := [cX1; cA24].  (* also 0,5   *)
-    Definition compact_classify : var -> RegClass := classify_by_list compact_public_regs.
+    Definition compact_public_regs : list var :=
+      [cX1; cA24].  (* also 0,5   *)
+    Definition compact_classify : var -> RegClass :=
+      classify_by_list compact_public_regs.
 
     (* Secret registers for the compact program (everything except public)    *)
-    Definition compact_secret_regs : list var := [cX2; cZ2; cX3; cZ3; cT0; cT1; cT2; cT3; cT4; cT5].
+    Definition compact_secret_regs : list var :=
+      [cX2; cZ2; cX3; cZ3; cT0; cT1; cT2; cT3; cT4; cT5].
 
     (* HW of secret registers in compact program is constant
        same proof structure as all_secure_secret?  *)
@@ -597,7 +633,8 @@ Section HammingWeight.
        the connecting invariant.                                               *)
 
     (* valid_state_partial: only secret registers have their complement tracked *)
-    Definition valid_state_partial (s : state) (classify : var → RegClass) : Prop := forall r, classify r = SecretReg → r < length s.(env) → read_register s.(denv) r = bv_not (read_register s.(env) r).
+    Definition valid_state_partial (s : state) (classify : var → RegClass) : Prop :=
+      forall r, classify r = SecretReg → r < length s.(env) → read_register s.(denv) r = bv_not (read_register s.(env) r).
 
     (* Observe that valid_state implies valid_state_partial for any classify:
        if every register has its complement, then in particular secret ones do. *)

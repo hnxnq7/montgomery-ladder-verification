@@ -52,7 +52,8 @@ Section StateMachine.
     fromdMem  : bool * bv n;             (* (valid, loaded data)  read bus     *)
     dfromdMem : bool * bv n;             dual read bus                      *)
   }. 
-  Instance eta : Settable state := settable! mkState <pc; Regs; DRegs; InstrMem; Stage; toiMem; fromiMem; bookkeepingState>.
+  Instance eta : Settable state :=
+    settable! mkState <pc; Regs; DRegs; InstrMem; Stage; toiMem; fromiMem; bookkeepingState>.
 
   (* ── Invariant ───────────────────────────────────────────────────────────
      Every dual slot holds the bitwise complement of its secret original.
@@ -92,7 +93,8 @@ Section StateMachine.
     end.
 
   (* DRegs selective update: set DRegs[j] := v for every j where secret_map[j] = rd *)
-  Definition update_dregs (dregs : Vector.t (bv n) 16) (rd : var) (v : bv n) : Vector.t (bv n) 16 := Vector.map2 (fun dreg (mapped : Fin.t 32) => if Nat.eqb (proj1_sig (Fin.to_nat mapped)) rd then v else dreg) dregs secret_map.
+  Definition update_dregs (dregs : Vector.t (bv n) 16) (rd : var) (v : bv n) : Vector.t (bv n) 16 :=
+    Vector.map2 (fun dreg (mapped : Fin.t 32) => if Nat.eqb (proj1_sig (Fin.to_nat mapped)) rd then v else dreg) dregs secret_map.
 
   (* Instruction encoding: bit layout [rs2(5)|rs1(5)|rd(5)|op(2)], requires n ≥ 17.
      op: 0=IAdd 1=ISub 2=IMul 3=Observe *)
@@ -120,7 +122,8 @@ Section StateMachine.
     end.
 
   (* ── Stage handlers ──────────────────────────────────────────────────── *)
-  Definition fetch (s : state) : state := s <|toiMem := (true, s.(pc))|> <|Stage := Execute|>.
+  Definition fetch (s : state) : state :=
+    s <|toiMem := (true, s.(pc))|> <|Stage := Execute|>.
 
   (* Execute reads from fromiMem (set by tick_iMem the same cycle fetch ran) *)
   Definition execute (s : state) : state :=
@@ -381,10 +384,12 @@ Section StateMachine.
     | k :: ks' => @Vector.cons (Fin.t 32%nat) (mk_reg k) _ (list_to_fin32_vec ks')
     end.
 
-  Definition ladder_secret_map : Vector.t (Fin.t 32%nat) 16 := list_to_fin32_vec [1; 2; 3; 4; 6; 7; 8; 9; 10; 11; 12; 13; 14; 15; 16; 19]%nat.
+  Definition ladder_secret_map : Vector.t (Fin.t 32%nat) 16 :=
+    list_to_fin32_vec [1; 2; 3; 4; 6; 7; 8; 9; 10; 11; 12; 13; 14; 15; 16; 19]%nat.
 
   (* Encode the LadderStep program as a flat list of instruction words. *)
-  Definition ladder_instr_mem : list (bv n) := map encode_instr program.
+  Definition ladder_instr_mem : list (bv n) :=
+    map encode_instr program.
 
   (* Build the initial 32-register file from the six input values.
      Register assignment: 0=X1(public), 1=X2, 2=Z2, 3=X3, 4=Z3, 5=A24(public). *)
@@ -413,7 +418,8 @@ Section StateMachine.
   Qed.
 
   (* One full clock cycle: processor stage transition + instruction memory response. *)
-  Definition full_tick (s : state) : state := tick_iMem (tick s).
+  Definition full_tick (s : state) : state :=
+    tick_iMem (tick s).
 
   (* Iterate full_tick for a given number of cycles. *)
   Fixpoint run_ticks (s : state) (fuel : nat) : state :=
@@ -423,7 +429,8 @@ Section StateMachine.
     end.
 
   (* Run one complete LadderStep: 18 instructions × 3 pipeline stages = 54 ticks. *)
-  Definition ladder_result (x2 z2 x3 z3 x1 a24 : bv n) : state := run_ticks (ladder_init x2 z2 x3 z3 x1 a24) 54.
+  Definition ladder_result (x2 z2 x3 z3 x1 a24 : bv n) : state :=
+    run_ticks (ladder_init x2 z2 x3 z3 x1 a24) 54.
 
   (* Security corollary: valid_state is preserved for all 54 ticks. *)
   Lemma ladder_result_valid (x2 z2 x3 z3 x1 a24 : bv n) : valid_state (ladder_result x2 z2 x3 z3 x1 a24).
@@ -445,7 +452,8 @@ Section StateMachine.
   (* ── HW observable ───────────────────────────────────────────────────────── *)
 
   (* Hamming weight of one n-bit bitvector: count the 1-bits. *)
-  Definition HW_bv (v : bv n) : nat := fold_left (fun (acc : nat) (b : bool) => if b then (acc + 1)%nat else acc) (bv_to_bits v) 0%nat.
+  Definition HW_bv (v : bv n) : nat :=
+    fold_left (fun (acc : nat) (b : bool) => if b then (acc + 1)%nat else acc) (bv_to_bits v) 0%nat.
 
   (* Hamming weight of the full processor state: sum HW_bv over every bitvector
      field.  This models the instantaneous power draw at one clock edge —
@@ -465,7 +473,8 @@ Section StateMachine.
     + HW_bv dval)%nat.      (* E2W dual value                                *)
 
   (* The total observable power is state_HW. *)
-  Definition total_HW_observable (s : state) : nat := state_HW s.
+  Definition total_HW_observable (s : state) : nat :=
+    state_HW s.
 
   (* ── Power-independence theorem ──────────────────────────────────────────── *)
   (* Two processors with the same public registers and instruction memory but

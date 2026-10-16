@@ -25,7 +25,8 @@ Record ProjX (p : Z) := {
   pZ : Z
 }.
 
-Definition x_of {p : Z} (Q : AffinePoint p) : Z := aX Q.
+Definition x_of {p : Z} (Q : AffinePoint p) : Z :=
+  aX Q.
 
 (* ══════════════════════════════════════════════════════════════════════════════
    Math — integer-field LadderStep, conditional swap, and CSwap correctness
@@ -37,10 +38,14 @@ Section Montgomery.
   Variable A24    : Z.             (* (A+2)/4 mod p precomputed from curve  *)
 
   (* ── Field arithmetic ───────────────────────────────────────────────────── *)
-  Definition fadd (a b : Z) : Z := (a + b) mod p.
-  Definition fsub (a b : Z) : Z := (a - b) mod p.
-  Definition fmul (a b : Z) : Z := (a * b) mod p.
-  Definition fsq  (a : Z)   : Z := fmul a a.
+  Definition fadd (a b : Z) : Z :=
+    (a + b) mod p.
+  Definition fsub (a b : Z) : Z :=
+    (a - b) mod p.
+  Definition fmul (a b : Z) : Z :=
+    (a * b) mod p.
+  Definition fsq  (a : Z)   : Z :=
+    fmul a a.
 
   Lemma fmul_bounded: forall (a b : Z), 0 <= fmul a b < p.
   Proof.
@@ -61,8 +66,10 @@ Section Montgomery.
     all: auto with field.
   Qed. *)
 
-  Definition affine_to_proj (x : Z) : Z * Z := (x, 1).
-  Definition proj_to_affine (pX pZ : Z) : Z := fmul pX (fp_inv p pZ).
+  Definition affine_to_proj (x : Z) : Z * Z :=
+    (x, 1).
+  Definition proj_to_affine (pX pZ : Z) : Z :=
+    fmul pX (fp_inv p pZ).
   
   Parameter scalar_mul : Z -> AffinePoint p -> AffinePoint p.
 
@@ -166,7 +173,8 @@ Section Montgomery.
       LadderStep X1 X2 Z2 X3 Z3.
 
   (* bit extraction *)
-  Definition bit_i (n : Z) (i : nat) : bool := Z.testbit n (Z.of_nat i).
+  Definition bit_i (n : Z) (i : nat) : bool :=
+    Z.testbit n (Z.of_nat i).
   
   Fixpoint MontLadder_rec (m : nat) (X1 n : Z) (st : Z * Z * Z * Z) : Z * Z * Z * Z :=
     match m with
@@ -208,7 +216,8 @@ Section Montgomery.
   (* ── CSwap ─────────────────────────────────────────────────────────────────
      Algorithm 3: conditional swap of the (X2,Z2)/(X3,Z3) register pairs.
      The swap is controlled by bit b; when b=true the pairs are exchanged.  *)
-  Definition CSwap (X2 Z2 X3 Z3 : Z) (b : bool) : Z * Z * Z * Z := if b then (X3, Z3, X2, Z2) else (X2, Z2, X3, Z3).
+  Definition CSwap (X2 Z2 X3 Z3 : Z) (b : bool) : Z * Z * Z * Z :=
+    if b then (X3, Z3, X2, Z2) else (X2, Z2, X3, Z3).
 
   Definition MontLadderCSwap_step (X1 : Z) (bit prevbit : bool) (st : Z * Z * Z * Z) : (Z * Z * Z * Z) * bool :=
     let swap := xorb bit prevbit in
@@ -240,7 +249,8 @@ Section Montgomery.
     let '(X2, Z2, X3, Z3) := st in (X3, Z3, X2, Z2).
 
   (* undo the current logical swap: if swapped=true, flip back *)
-  Definition norm_regs (st : Z * Z * Z * Z) (swapped : bool) : Z * Z * Z * Z := if swapped then swap_regs st else st.
+  Definition norm_regs (st : Z * Z * Z * Z) (swapped : bool) : Z * Z * Z * Z :=
+    if swapped then swap_regs st else st.
   
   (* One step of Algorithm 3, when normalized by its output swap bit,
    equals one step of Algorithm 1 starting from the normalized input. *)
@@ -267,7 +277,8 @@ Section Montgomery.
       apply simple_tuple_inversion in H; destruct H as [H1 H2]
     end.
   
-  Ltac simplify_tupless := simplify_tuples; subst.
+  Ltac simplify_tupless :=
+    simplify_tuples; subst.
 
   Lemma rec_eq : forall m xP n st st' st1 st1' prev new_prev,
     (* let '(regs3, new_prev) := MontLadderCSwap_rec m xP n (st, prev) in norm_regs regs3 new_prev

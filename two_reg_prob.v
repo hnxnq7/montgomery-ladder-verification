@@ -34,14 +34,18 @@ Section TwoRegProb.
     | T_GenRV (rd : bool).         (* rd := uniform random (forks the ensemble) *)
 
   (* Ensemble: list of equally-probable states *)
-  Definition Ensemble := list two_state.
+  Definition Ensemble :=
+    list two_state.
 
-  Definition read_r (s : two_state) (r : bool) : bv n := if r then s.(r1) else s.(r0).
+  Definition read_r (s : two_state) (r : bool) : bv n :=
+    if r then s.(r1) else s.(r0).
 
-  Definition write_r (s : two_state) (r : bool) (v : bv n) : two_state := if r then mk_two_state s.(r0) v else mk_two_state v s.(r1).
+  Definition write_r (s : two_state) (r : bool) (v : bv n) : two_state :=
+    if r then mk_two_state s.(r0) v else mk_two_state v s.(r1).
 
   (* Every n-bit bitvector in order — the range GenRV samples uniformly. *)
-  Definition all_bv : list (bv n) := map (fun k => Z_to_bv n (Z.of_nat k)) (seq 0 (Z.to_nat (2 ^ Z.of_N n))).
+  Definition all_bv : list (bv n) :=
+    map (fun k => Z_to_bv n (Z.of_nat k)) (seq 0 (Z.to_nat (2 ^ Z.of_N n))).
 
   
   (* Small-step semantics *)
@@ -55,7 +59,8 @@ Section TwoRegProb.
     end.
 
   (* Lift one step over the full ensemble *)
-  Definition step_two (ens : Ensemble) (e : two_instr) : Ensemble := flat_map (fun s => interp_two s e) ens.
+  Definition step_two (ens : Ensemble) (e : two_instr) : Ensemble :=
+    flat_map (fun s => interp_two s e) ens.
 
   (* Run a program to completion *)
   Fixpoint run_two (ens : Ensemble) (prog : list two_instr) : Ensemble :=
@@ -68,10 +73,12 @@ Section TwoRegProb.
   (* Security metric *)
 
   (* Hamming weight of a single bitvector. *)
-  Definition HW2 (a : bv n) : nat := fold_left (fun (acc : nat) (b : bool) => if b then (acc + 1)%nat else acc) (bv_to_bits a) 0%nat.
+  Definition HW2 (a : bv n) : nat :=
+    fold_left (fun (acc : nat) (b : bool) => if b then (acc + 1)%nat else acc) (bv_to_bits a) 0%nat.
 
   (* todo: instead of summing over ensemble, state equivalence between distribution of copies. *)
-  Definition total_HW_r1 (ens : Ensemble) : nat := fold_left (fun (acc : nat) (s : two_state) => (acc + HW2 s.(r1))%nat) ens 0%nat.
+  Definition total_HW_r1 (ens : Ensemble) : nat :=
+    fold_left (fun (acc : nat) (s : two_state) => (acc + HW2 s.(r1))%nat) ens 0%nat.
 
   (* Masking program *)
 
