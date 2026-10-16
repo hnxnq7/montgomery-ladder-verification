@@ -1,8 +1,11 @@
-# Montgomery Ladder: Original Baseline
+# Montgomery Ladder Verification
 
 This is the original single-file Rocq development, recovered so we can work
 through it one small step at a time. No later proof changes, Lean port, memory
 processor extensions, or CPU integrations are included.
+
+This is the main working repository. The larger development is preserved
+separately in [montgomery-ladder-verification-expanded](https://github.com/hnxnq7/montgomery-ladder-verification-expanded).
 
 ## Recovered Source
 
@@ -46,5 +49,5 @@ are excluded from Git.
 ## How We Will Work
 
 Read a definition, agree on what it means, and discuss a proposed change before
-implementing it. The larger `montgomery-ladder-verification` repository remains
-separate and unchanged. This initial commit preserves the recovered baseline.
+implementing it. The larger development remains separate; its source files
+have not been changed by the rename. The initial commit preserves the recovered baseline.
