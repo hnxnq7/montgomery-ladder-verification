@@ -42,9 +42,7 @@ Section Montgomery.
   Definition fmul (a b : Z) : Z := (a * b) mod p.
   Definition fsq  (a : Z)   : Z := fmul a a.
 
-  Lemma fmul_bounded:
-    forall (a b : Z),
-    0 <= fmul a b < p.
+  Lemma fmul_bounded: forall (a b : Z), 0 <= fmul a b < p.
   Proof.
     intros. unfold fmul. apply Z.mod_pos_bound. lia.
   Qed.
@@ -64,8 +62,7 @@ Section Montgomery.
   Qed. *)
 
   Definition affine_to_proj (x : Z) : Z * Z := (x, 1).
-  Definition proj_to_affine (pX pZ : Z) : Z :=
-    fmul pX (fp_inv p pZ).
+  Definition proj_to_affine (pX pZ : Z) : Z := fmul pX (fp_inv p pZ).
   
   Parameter scalar_mul : Z -> AffinePoint p -> AffinePoint p.
 
@@ -73,34 +70,26 @@ Section Montgomery.
      the doubling formula outputs projective coords for [2k]P.
      Encodes: x(2P) = U²V² / ((U²-V²)(V²+A24(U²-V²)))
      where U=X+Z, V=X-Z *)
-  Axiom doubling_formula :
-    forall k (Q : AffinePoint p) (X Zc : Z),
-    proj_to_affine X Zc = x_of (scalar_mul k Q) ->
+  Axiom doubling_formula : forall k (Q : AffinePoint p) (X Zc : Z), proj_to_affine X Zc = x_of (scalar_mul k Q) ->
     let U  := fadd X Zc in
     let V  := fsub X Zc in
     let U2 := fsq U in
     let V2 := fsq V in
     let d  := fsub U2 V2 in
-    proj_to_affine (fmul U2 V2) (fmul d (fadd V2 (fmul A24 d))) =
-      x_of (scalar_mul (2 * k) Q).
+    proj_to_affine (fmul U2 V2) (fmul d (fadd V2 (fmul A24 d))) = x_of (scalar_mul (2 * k) Q).
   
   (* Differential addition: given projective coords for [k]P and [k+1]P,
      and the affine x-coord of P, the formula outputs projective coords for [2k+1]P.
      Encodes: x(P+Q) = (UT+VW)² / (X1*(UT-VW)²)
     where U=X2+Z2, V=X2-Z2, W=X3+Z3, T=X3-Z3 *)
-  Axiom diff_add_formula :
-    forall k (Q : AffinePoint p) (X2 Z2 X3 Z3 X1 : Z),
-    proj_to_affine X2 Z2 = x_of (scalar_mul k Q) ->
-    proj_to_affine X3 Z3 = x_of (scalar_mul (k + 1) Q) ->
-    X1 = x_of Q ->
+  Axiom diff_add_formula : forall k (Q : AffinePoint p) (X2 Z2 X3 Z3 X1 : Z), proj_to_affine X2 Z2 = x_of (scalar_mul k Q) -> proj_to_affine X3 Z3 = x_of (scalar_mul (k + 1) Q) -> X1 = x_of Q ->
     let U  := fadd X2 Z2 in
     let V  := fsub X2 Z2 in
     let W  := fadd X3 Z3 in
     let T  := fsub X3 Z3 in
     let Sp := fadd (fmul U T) (fmul V W) in
     let Sm := fsub (fmul U T) (fmul V W) in
-    proj_to_affine (fsq Sp) (fmul (fsq Sm) X1) =
-      x_of (scalar_mul (2 * k + 1) Q).
+    proj_to_affine (fsq Sp) (fmul (fsq Sm) X1) = x_of (scalar_mul (2 * k + 1) Q).
 
   (* ── LadderStep ────────────────────────────────────────────────────────────
      One iteration of the Montgomery differential-addition chain.
@@ -126,20 +115,16 @@ Section Montgomery.
     
     let X2'  := fmul U2 V2 in        (* U^2 * V^2                          *)
     let diff := fsub U2 V2 in        (* U^2 - V^2                           *)
-    let Z2'  := fmul diff
-                  (fadd V2 (fmul A24 diff)) in (* (U^2-V^2)(V^2 + A24*(U^2-V^2))     *)
+    let Z2'  := fmul diff (fadd V2 (fmul A24 diff)) in (* (U^2-V^2)(V^2 + A24*(U^2-V^2))     *)
     (X2', Z2', X3', Z3').
   
   
   (* U²V² = (X²-Z²)²  i.e. the doubling numerator in its standard form.
      proof: (X+Z)²(X-Z)² = ((X+Z)(X-Z))² = (X²-Z²)²  by ring mod p *)
-  Lemma doubling_num_algebra (X Zc : Z) :
-    fmul (fsq (fadd X Zc)) (fsq (fsub X Zc)) =
-      fsq (fsub (fsq X) (fsq Zc)).
+  Lemma doubling_num_algebra (X Zc : Z) : fmul (fsq (fadd X Zc)) (fsq (fsub X Zc)) = fsq (fsub (fsq X) (fsq Zc)).
   Proof.
     unfold fsq, fadd, fsub, fmul.
-    rewrite ?Zmult_mod_idemp_l, ?Zmult_mod_idemp_r,
-            ?Zminus_mod_idemp_l, ?Zminus_mod_idemp_r.
+    rewrite ?Zmult_mod_idemp_l, ?Zmult_mod_idemp_r, ?Zminus_mod_idemp_l, ?Zminus_mod_idemp_r.
     f_equal.
   Admitted.
 
@@ -148,8 +133,7 @@ Section Montgomery.
   Lemma diff_add_sum_algebra (X2 Z2 X3 Z3 : Z) :
     let U  := fadd X2 Z2 in let V := fsub X2 Z2 in
     let W  := fadd X3 Z3 in let T := fsub X3 Z3 in
-    fsq (fadd (fmul U T) (fmul V W)) =
-      fmul 4 (fsq (fsub (fmul X2 X3) (fmul Z2 Z3))).
+    fsq (fadd (fmul U T) (fmul V W)) = fmul 4 (fsq (fsub (fmul X2 X3) (fmul Z2 Z3))).
   Admitted.
 
   (* (UT-VW)² = 4(X₂Z₃ - X₃Z₂)²
@@ -157,17 +141,12 @@ Section Montgomery.
   Lemma diff_add_dif_algebra (X2 Z2 X3 Z3 : Z) :
     let U  := fadd X2 Z2 in let V := fsub X2 Z2 in
     let W  := fadd X3 Z3 in let T := fsub X3 Z3 in
-    fsq (fsub (fmul U T) (fmul V W)) =
-      fmul 4 (fsq (fsub (fmul X2 Z3) (fmul X3 Z2))).
+    fsq (fsub (fmul U T) (fmul V W)) = fmul 4 (fsq (fsub (fmul X2 Z3) (fmul X3 Z2))).
   Admitted.
 
-  Lemma LadderStep_correct (X1 X2 Z2 X3 Z3 k : Z) (P : AffinePoint p) :
-    proj_to_affine X2 Z2 = x_of (scalar_mul k P) ->
-    proj_to_affine X3 Z3 = x_of (scalar_mul (k + 1) P) ->
-    X1 = x_of P ->
+  Lemma LadderStep_correct (X1 X2 Z2 X3 Z3 k : Z) (P : AffinePoint p) : proj_to_affine X2 Z2 = x_of (scalar_mul k P) -> proj_to_affine X3 Z3 = x_of (scalar_mul (k + 1) P) -> X1 = x_of P ->
     let '(X2', Z2', X3', Z3') := LadderStep X1 X2 Z2 X3 Z3 in
-    proj_to_affine X2' Z2' = x_of (scalar_mul (2 * k)     P) /\
-    proj_to_affine X3' Z3' = x_of (scalar_mul (2 * k + 1) P).
+    proj_to_affine X2' Z2' = x_of (scalar_mul (2 * k)     P) /\ proj_to_affine X3' Z3' = x_of (scalar_mul (2 * k + 1) P).
   Proof.
     intros H_R0 H_R1 H_X1.
     unfold LadderStep. simpl.
@@ -178,8 +157,7 @@ Section Montgomery.
 
   
   (* algorithm 1 *)
-  Definition MontLadder_step
-      (X1 : Z) (bit : bool) (st : Z * Z * Z * Z) : Z * Z * Z * Z :=
+  Definition MontLadder_step (X1 : Z) (bit : bool) (st : Z * Z * Z * Z) : Z * Z * Z * Z :=
     let '(X2, Z2, X3, Z3) := st in
     if bit then
       let '(X3', Z3', X2', Z2') := LadderStep X1 X3 Z3 X2 Z2 in
@@ -188,11 +166,9 @@ Section Montgomery.
       LadderStep X1 X2 Z2 X3 Z3.
 
   (* bit extraction *)
-  Definition bit_i (n : Z) (i : nat) : bool :=
-    Z.testbit n (Z.of_nat i).
+  Definition bit_i (n : Z) (i : nat) : bool := Z.testbit n (Z.of_nat i).
   
-  Fixpoint MontLadder_rec
-      (m : nat) (X1 n : Z) (st : Z * Z * Z * Z) : Z * Z * Z * Z :=
+  Fixpoint MontLadder_rec (m : nat) (X1 n : Z) (st : Z * Z * Z * Z) : Z * Z * Z * Z :=
     match m with
     | O => st
     | S m' =>
@@ -232,25 +208,16 @@ Section Montgomery.
   (* ── CSwap ─────────────────────────────────────────────────────────────────
      Algorithm 3: conditional swap of the (X2,Z2)/(X3,Z3) register pairs.
      The swap is controlled by bit b; when b=true the pairs are exchanged.  *)
-  Definition CSwap
-      (X2 Z2 X3 Z3 : Z) (b : bool) : Z * Z * Z * Z :=
-    if b
-    then (X3, Z3, X2, Z2)
-    else (X2, Z2, X3, Z3).
+  Definition CSwap (X2 Z2 X3 Z3 : Z) (b : bool) : Z * Z * Z * Z := if b then (X3, Z3, X2, Z2) else (X2, Z2, X3, Z3).
 
-  Definition MontLadderCSwap_step
-      (X1 : Z) (bit prevbit : bool) (st : Z * Z * Z * Z)
-      : (Z * Z * Z * Z) * bool :=
+  Definition MontLadderCSwap_step (X1 : Z) (bit prevbit : bool) (st : Z * Z * Z * Z) : (Z * Z * Z * Z) * bool :=
     let swap := xorb bit prevbit in
     let '(X2, Z2, X3, Z3) := st in
     let '(X2s, Z2s, X3s, Z3s) := CSwap X2 Z2 X3 Z3 swap in
     let '(X2', Z2', X3', Z3') := LadderStep X1 X2s Z2s X3s Z3s in
     ((X2', Z2', X3', Z3'), bit).
   
-  Fixpoint MontLadderCSwap_rec
-      (m : nat) (X1 n : Z)
-      (st : (Z * Z * Z * Z) * bool)
-      : (Z * Z * Z * Z) * bool :=
+  Fixpoint MontLadderCSwap_rec (m : nat) (X1 n : Z) (st : (Z * Z * Z * Z) * bool) : (Z * Z * Z * Z) * bool :=
     match m with
     | O => st
     | S m' =>
@@ -273,16 +240,13 @@ Section Montgomery.
     let '(X2, Z2, X3, Z3) := st in (X3, Z3, X2, Z2).
 
   (* undo the current logical swap: if swapped=true, flip back *)
-  Definition norm_regs (st : Z * Z * Z * Z) (swapped : bool) : Z * Z * Z * Z :=
-    if swapped then swap_regs st else st.
+  Definition norm_regs (st : Z * Z * Z * Z) (swapped : bool) : Z * Z * Z * Z := if swapped then swap_regs st else st.
   
   (* One step of Algorithm 3, when normalized by its output swap bit,
    equals one step of Algorithm 1 starting from the normalized input. *)
-  Lemma MontLadder_step_norm:
-    forall X1 X2 Z2 X3 Z3 (prev bit : bool),
+  Lemma MontLadder_step_norm: forall X1 X2 Z2 X3 Z3 (prev bit : bool),
     let '(regs3, new_prev) := MontLadderCSwap_step X1 bit prev (X2, Z2, X3, Z3) in
-    norm_regs regs3 new_prev
-    = MontLadder_step X1 bit (norm_regs (X2, Z2, X3, Z3) prev).
+    norm_regs regs3 new_prev = MontLadder_step X1 bit (norm_regs (X2, Z2, X3, Z3) prev).
   Proof.
     intros.
     unfold MontLadderCSwap_step, MontLadder_step, CSwap, norm_regs, swap_regs.
@@ -290,10 +254,7 @@ Section Montgomery.
     destruct prev, bit; simpl; try reflexivity.
   Qed.
 
-  Lemma simple_tuple_inversion:
-    forall {A} {B} (a: A) (b: B) x y,
-    (a,b) = (x,y) ->
-    a = x /\ b = y.
+  Lemma simple_tuple_inversion: forall {A} {B} (a: A) (b: B) x y, (a,b) = (x,y) -> a = x /\ b = y.
   Proof.
     intros. inversion H. auto.
   Qed.
@@ -308,15 +269,11 @@ Section Montgomery.
   
   Ltac simplify_tupless := simplify_tuples; subst.
 
-  Lemma rec_eq : 
-    forall m xP n st st' st1 st1' prev new_prev,
+  Lemma rec_eq : forall m xP n st st' st1 st1' prev new_prev,
     (* let '(regs3, new_prev) := MontLadderCSwap_rec m xP n (st, prev) in norm_regs regs3 new_prev
     = MontLadder_rec m xP n st. *)
 
-    st1 = norm_regs st prev ->
-    MontLadderCSwap_rec m xP n (st, prev) = (st', new_prev) ->
-    MontLadder_rec m xP n st1 = st1' ->
-    st1' = norm_regs st' new_prev.
+    st1 = norm_regs st prev -> MontLadderCSwap_rec m xP n (st, prev) = (st', new_prev) -> MontLadder_rec m xP n st1 = st1' -> st1' = norm_regs st' new_prev.
   Proof.
     induction m.
     - simpl. intros. simplify_tupless. reflexivity.
@@ -339,8 +296,7 @@ Section Montgomery.
   (* ── CSwap_eq ───────────────────────────────────────────────────────────────
      Correctness: Algorithm 1 (MontLadder) and Algorithm 3 (MontLadderCSwap)
      produce identical outputs for every input.                               *)
-  Lemma CSwap_eq m xP n :
-    MontLadderCSwap m xP n = MontLadder m xP n.
+  Lemma CSwap_eq m xP n : MontLadderCSwap m xP n = MontLadder m xP n.
   Proof.
     unfold MontLadderCSwap, MontLadder.
     remember (MontLadderCSwap_rec m xP n ((1, 0, xP, 1), false)) as cswap_res eqn:HCSwap.
