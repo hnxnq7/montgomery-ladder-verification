@@ -236,7 +236,11 @@ Section HammingWeight.
 
     (* run first [steps] instructions, accumulating observations *)
     Definition run (s : state) (prog : list instr) (steps : nat) : state * list Observation :=
-      fold_left (fun '(s_acc, obs_acc) e => let '(s', new_obs) := dual_interp_instr s_acc e in (s', obs_acc ++ new_obs)) (firstn steps prog) (s, []).
+      fold_left
+        (fun '(s_acc, obs_acc) e =>
+          let '(s', new_obs) := dual_interp_instr s_acc e in
+          (s', obs_acc ++ new_obs))
+        (firstn steps prog) (s, []).
 
       
 
@@ -264,7 +268,9 @@ Section HammingWeight.
     Proof. intros e i v. unfold write_register. apply length_insert. Qed.
 
     (* Reading back a register you just wrote returns the written value. *)
-    Lemma read_register_write_same : forall (e : Env) (i : var) (v : bv n), i < length e -> read_register (write_register e i v) i = v.
+    Lemma read_register_write_same : forall (e : Env) (i : var) (v : bv n),
+      i < length e ->
+      read_register (write_register e i v) i = v.
     Proof.
       intros e. induction e as [| x xs IH]; intros i v Hi.
       - simpl in Hi. lia.
@@ -272,7 +278,9 @@ Section HammingWeight.
     Qed.
 
     (* Reading a register other than the one written returns the original value. *)
-    Lemma read_register_write_diff : forall (e : Env) (i j : var) (v : bv n), i <> j -> read_register (write_register e i v) j = read_register e j.
+    Lemma read_register_write_diff : forall (e : Env) (i j : var) (v : bv n),
+      i <> j ->
+      read_register (write_register e i v) j = read_register e j.
     Proof.
       intros e. induction e as [| x xs IH]; intros i j v Hij.
       - reflexivity.
@@ -302,14 +310,21 @@ Section HammingWeight.
       reflexivity.
     Qed.
 
-    Lemma dual_interp_preserves_length : forall (s : state) (i : instr), length (env (dual_interp_instr s i).1) = length (env s).
+    Lemma dual_interp_preserves_length : forall (s : state) (i : instr),
+      length (env (dual_interp_instr s i).1) = length (env s).
     Proof.
       intros s i. unfold dual_interp_instr.
       destruct (interp_instr s.(env) i) as [env' obs] eqn:H.
       simpl. rewrite <- (interp_instr_preserves_length s.(env) i). rewrite H. reflexivity.
     Qed.
 
-    Lemma fold_left_preserves_length : forall instrs s_init obs_init, length (env (fold_left (fun '(s_acc, obs_acc) e => let '(s', new_obs) := dual_interp_instr s_acc e in (s', obs_acc ++ new_obs)) instrs (s_init, obs_init)).1) = length (env s_init).
+    Lemma fold_left_preserves_length : forall instrs s_init obs_init,
+      length (env (fold_left
+        (fun '(s_acc, obs_acc) e =>
+          let '(s', new_obs) := dual_interp_instr s_acc e in
+          (s', obs_acc ++ new_obs))
+        instrs (s_init, obs_init)).1)
+      = length (env s_init).
     Proof.
       induction instrs as [| i rest IH]; intros s_init obs_init.
       - simpl. reflexivity.
@@ -318,7 +333,8 @@ Section HammingWeight.
         rewrite Hstep. reflexivity.
     Qed.
 
-    Lemma run_preserves_length : forall (s : state) (prog : list instr) (steps : nat), length (env (run s prog steps).1) = length (env s).
+    Lemma run_preserves_length : forall (s : state) (prog : list instr) (steps : nat),
+      length (env (run s prog steps).1) = length (env s).
     Proof. intros s prog steps. unfold run. apply fold_left_preserves_length. Qed.
 
     
@@ -331,7 +347,13 @@ Section HammingWeight.
       destruct (interp_instr s.(env) e) as [env' obs]. simpl. reflexivity.
     Qed.
 
-    Lemma fold_left_run_valid : forall instrs s_init obs_init, valid_state s_init -> valid_state (fold_left (fun '(s_acc, obs_acc) e => let '(s', new_obs) := dual_interp_instr s_acc e in (s', obs_acc ++ new_obs)) instrs (s_init, obs_init)).1.
+    Lemma fold_left_run_valid : forall instrs s_init obs_init,
+      valid_state s_init ->
+      valid_state (fold_left
+        (fun '(s_acc, obs_acc) e =>
+          let '(s', new_obs) := dual_interp_instr s_acc e in
+          (s', obs_acc ++ new_obs))
+        instrs (s_init, obs_init)).1.
     Proof.
       induction instrs as [| e rest IH]; intros s_init obs_init Hvalid.
       - simpl. exact Hvalid.
@@ -341,14 +363,17 @@ Section HammingWeight.
         rewrite Hstep in Hv. simpl in Hv. exact Hv.
     Qed.
 
-    Lemma run_preserves_valid : forall (s : state) (prog : list instr) (steps : nat), valid_state s -> valid_state (run s prog steps).1.
+    Lemma run_preserves_valid : forall (s : state) (prog : list instr) (steps : nat),
+      valid_state s -> valid_state (run s prog steps).1.
     Proof. intros s prog steps H. unfold run. apply fold_left_run_valid. exact H. Qed.
 
     
 
     (* ── HW complement ──────────────────────────────────────────────────────── *)
 
-    Lemma fold_left_plus : forall (rest : list bool) (acc : nat), fold_left (fun (acc : nat) (b : bool) => if b then acc + 1 else acc) rest acc = fold_left (fun (acc : nat) (b : bool) => if b then acc + 1 else acc) rest 0 + acc.
+    Lemma fold_left_plus : forall (rest : list bool) (acc : nat),
+      fold_left (fun (acc : nat) (b : bool) => if b then acc + 1 else acc) rest acc
+      = fold_left (fun (acc : nat) (b : bool) => if b then acc + 1 else acc) rest 0 + acc.
     Proof.
       induction rest. simpl. reflexivity.
       simpl. intros. destruct a; auto. rewrite IHrest. rewrite IHrest with (acc := 1). lia.
@@ -416,14 +441,18 @@ Section HammingWeight.
 
     (* General accumulator lemma for HW sums — same pattern as fold_left_plus.
        NB: parameter named [l] not [env] to avoid the state field projector. *)
-    Lemma num_1s_in_list_fold_plus : forall (l : list (bv n)) (k : nat), fold_left (fun (acc : nat) (pv : bv n) => acc + HW pv) l k = fold_left (fun (acc : nat) (pv : bv n) => acc + HW pv) l 0 + k.
+    Lemma num_1s_in_list_fold_plus : forall (l : list (bv n)) (k : nat),
+      fold_left (fun (acc : nat) (pv : bv n) => acc + HW pv) l k =
+      fold_left (fun (acc : nat) (pv : bv n) => acc + HW pv) l 0 + k.
     Proof.
       induction l as [| x rest IH]; simpl; intros k.
       - lia.
       - rewrite IH. rewrite IH with (k := HW x). lia.
     Qed.
 
-    Lemma fold_left_plus_HW : forall (l : list (bv n)) (acc : nat) (a : bv n), fold_left (fun (acc : nat) (pv : bv n) => acc + HW pv) l (acc + (HW a)) = fold_left (fun (acc : nat) (pv : bv n) => acc + HW pv) l (HW a) + acc.
+    Lemma fold_left_plus_HW : forall (l : list (bv n)) (acc : nat) (a : bv n),
+      fold_left (fun (acc : nat) (pv : bv n) => acc + HW pv) l (acc + (HW a))
+      = fold_left (fun (acc : nat) (pv : bv n) => acc + HW pv) l (HW a) + acc.
     Proof.
       intros.
       rewrite num_1s_in_list_fold_plus.
@@ -431,7 +460,10 @@ Section HammingWeight.
       lia.
     Qed.
 
-    Lemma valid_state_num_1s_induct : forall (env0 : Env) (acc : nat), fold_left (λ (acc : nat) (pv : bv n), acc + HW pv) env0 acc + fold_left (λ (acc : nat) (pv : bv n), acc + HW pv) (map bv_not env0) acc = length env0 * N.to_nat n + 2 * acc.
+    Lemma valid_state_num_1s_induct : forall (env0 : Env) (acc : nat),
+      fold_left (λ (acc : nat) (pv : bv n), acc + HW pv) env0 acc
+      + fold_left (λ (acc : nat) (pv : bv n), acc + HW pv) (map bv_not env0) acc
+      = length env0 * N.to_nat n + 2 * acc.
     Proof.
       (* induction before intros acc so the IH generalises over acc *)
       induction env0 as [| a rest IH].
@@ -499,7 +531,9 @@ Section HammingWeight.
       exists c, forall steps, num_1s_secret_state (run s prog steps).1 regs = c.
 
     (* helper: reading from a complemented env gives the complement *)
-    Lemma read_register_map_not : forall (env : Env) (r : var), r < length env -> read_register (map bv_not env) r = bv_not (read_register env r).
+    Lemma read_register_map_not : forall (env : Env) (r : var),
+      r < length env ->
+      read_register (map bv_not env) r = bv_not (read_register env r).
     Proof.
       intros env r Hr. unfold read_register.
       unfold default_var. rewrite <- map_nth with (f := bv_not). apply nth_indep. rewrite length_map. auto.
@@ -507,7 +541,9 @@ Section HammingWeight.
 
     (* fold_left accumulator lemma for num_1s_regs — same pattern as fold_left_plus.
        NB: parameter named [e] not [env] to avoid shadowing the state field projector. *)
-    Lemma num_1s_regs_fold_plus : forall (e : Env) (regs : list var) (acc : nat), fold_left (fun (acc : nat) (r : var) => acc + HW (read_register e r)) regs acc = fold_left (fun (acc : nat) (r : var) => acc + HW (read_register e r)) regs 0 + acc.
+    Lemma num_1s_regs_fold_plus : forall (e : Env) (regs : list var) (acc : nat),
+      fold_left (fun (acc : nat) (r : var) => acc + HW (read_register e r)) regs acc =
+      fold_left (fun (acc : nat) (r : var) => acc + HW (read_register e r)) regs 0 + acc.
     Proof.
       induction regs as [| r rest IH]; simpl; intros acc.
       - lia.
@@ -515,14 +551,18 @@ Section HammingWeight.
     Qed.
 
     (* peeling the head off num_1s_regs *)
-    Lemma num_1s_regs_cons : forall (e : Env) (r : var) (regs : list var), num_1s_regs e (r :: regs) = HW (read_register e r) + num_1s_regs e regs.
+    Lemma num_1s_regs_cons : forall (e : Env) (r : var) (regs : list var),
+      num_1s_regs e (r :: regs) = HW (read_register e r) + num_1s_regs e regs.
     Proof.
       intros e r regs. unfold num_1s_regs. simpl.
       rewrite num_1s_regs_fold_plus. lia.
     Qed.
 
     (* HW of secret registers is constant under valid_state *)
-    Lemma valid_state_num_1s_regs : forall (s : state) (regs : list var), valid_state s -> (forall r, In r regs -> r < length s.(env)) -> num_1s_secret_state s regs = length regs * N.to_nat n.
+    Lemma valid_state_num_1s_regs : forall (s : state) (regs : list var),
+      valid_state s ->
+      (forall r, In r regs -> r < length s.(env)) ->
+      num_1s_secret_state s regs = length regs * N.to_nat n.
     Proof.
       intros s regs Hvalid.
       (* introduce Hbounds AFTER induction so the IH generalises it for the tail *)
@@ -545,7 +585,10 @@ Section HammingWeight.
     Qed.
 
     (* HW of secret registers is constant throughout execution *)
-    Lemma all_secure_secret : forall (prog : list instr) (init_s : state), valid_state init_s -> (forall r, In r ladder_secret_regs -> r < length init_s.(env)) -> secure_secret prog init_s ladder_secret_regs.
+    Lemma all_secure_secret : forall (prog : list instr) (init_s : state),
+      valid_state init_s ->
+      (forall r, In r ladder_secret_regs -> r < length init_s.(env)) ->
+      secure_secret prog init_s ladder_secret_regs.
     Proof.
       unfold secure_secret. intros prog init_s Hvalid Hbounds.
       exists (length ladder_secret_regs * N.to_nat n).
@@ -616,7 +659,10 @@ Section HammingWeight.
 
     (* HW of secret registers in compact program is constant
        same proof structure as all_secure_secret?  *)
-    Lemma compact_all_secure_secret : forall (init_s : state), valid_state init_s -> (forall r, In r compact_secret_regs -> r < length init_s.(env)) -> secure_secret compact_program init_s compact_secret_regs.
+    Lemma compact_all_secure_secret : forall (init_s : state),
+      valid_state init_s ->
+      (forall r, In r compact_secret_regs -> r < length init_s.(env)) ->
+      secure_secret compact_program init_s compact_secret_regs.
     Proof.
       unfold secure_secret. intros init_s Hvalid Hbounds.
       exists (length compact_secret_regs * N.to_nat n).
@@ -634,11 +680,18 @@ Section HammingWeight.
 
     (* valid_state_partial: only secret registers have their complement tracked *)
     Definition valid_state_partial (s : state) (classify : var → RegClass) : Prop :=
-      forall r, classify r = SecretReg → r < length s.(env) → read_register s.(denv) r = bv_not (read_register s.(env) r).
+      forall r,
+        classify r = SecretReg →
+        r < length s.(env) →
+        read_register s.(denv) r = bv_not (read_register s.(env) r).
 
     (* Observe that valid_state implies valid_state_partial for any classify:
        if every register has its complement, then in particular secret ones do. *)
-    Lemma valid_state_implies_partial : forall (s : state) (classify : var → RegClass), valid_state s → (forall r, r < length s.(env)) → valid_state_partial s classify.
+    Lemma valid_state_implies_partial :
+      forall (s : state) (classify : var → RegClass),
+        valid_state s →
+        (forall r, r < length s.(env)) →
+        valid_state_partial s classify.
     Proof.
       intros s classify Hv _Hlen r _Hsec Hr.
       unfold valid_state in Hv.
@@ -664,7 +717,12 @@ Section HammingWeight.
     (* Invariant preservation:
         if s satisfies valid_state_partial (classify), and the instruction writes a secret register,
         --> then the updated state still satisfies valid_state_partial.  *)
-    Lemma dual_interp_selective_preserves_partial : forall (classify : var → RegClass) (s : state) (e : instr), valid_state_partial s classify → (forall r, r < length s.(env)) → length s.(denv) = length s.(env) → valid_state_partial (fst (dual_interp_selective classify s e)) classify.
+    Lemma dual_interp_selective_preserves_partial :
+      forall (classify : var → RegClass) (s : state) (e : instr),
+        valid_state_partial s classify →
+        (forall r, r < length s.(env)) →
+        length s.(denv) = length s.(env) →
+        valid_state_partial (fst (dual_interp_selective classify s e)) classify.
     Proof.
       intros classify s e Hpartial Hlen Hdlen.
       unfold dual_interp_selective, valid_state_partial in *.

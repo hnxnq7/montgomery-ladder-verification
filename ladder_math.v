@@ -89,7 +89,11 @@ Section Montgomery.
      and the affine x-coord of P, the formula outputs projective coords for [2k+1]P.
      Encodes: x(P+Q) = (UT+VW)² / (X1*(UT-VW)²)
     where U=X2+Z2, V=X2-Z2, W=X3+Z3, T=X3-Z3 *)
-  Axiom diff_add_formula : forall k (Q : AffinePoint p) (X2 Z2 X3 Z3 X1 : Z), proj_to_affine X2 Z2 = x_of (scalar_mul k Q) -> proj_to_affine X3 Z3 = x_of (scalar_mul (k + 1) Q) -> X1 = x_of Q ->
+  Axiom diff_add_formula :
+    forall k (Q : AffinePoint p) (X2 Z2 X3 Z3 X1 : Z),
+    proj_to_affine X2 Z2 = x_of (scalar_mul k Q) ->
+    proj_to_affine X3 Z3 = x_of (scalar_mul (k + 1) Q) ->
+    X1 = x_of Q ->
     let U  := fadd X2 Z2 in
     let V  := fsub X2 Z2 in
     let W  := fadd X3 Z3 in
@@ -151,9 +155,13 @@ Section Montgomery.
     fsq (fsub (fmul U T) (fmul V W)) = fmul 4 (fsq (fsub (fmul X2 Z3) (fmul X3 Z2))).
   Admitted.
 
-  Lemma LadderStep_correct (X1 X2 Z2 X3 Z3 k : Z) (P : AffinePoint p) : proj_to_affine X2 Z2 = x_of (scalar_mul k P) -> proj_to_affine X3 Z3 = x_of (scalar_mul (k + 1) P) -> X1 = x_of P ->
+  Lemma LadderStep_correct (X1 X2 Z2 X3 Z3 k : Z) (P : AffinePoint p) :
+    proj_to_affine X2 Z2 = x_of (scalar_mul k P) ->
+    proj_to_affine X3 Z3 = x_of (scalar_mul (k + 1) P) ->
+    X1 = x_of P ->
     let '(X2', Z2', X3', Z3') := LadderStep X1 X2 Z2 X3 Z3 in
-    proj_to_affine X2' Z2' = x_of (scalar_mul (2 * k)     P) /\ proj_to_affine X3' Z3' = x_of (scalar_mul (2 * k + 1) P).
+    proj_to_affine X2' Z2' = x_of (scalar_mul (2 * k)     P) /\
+    proj_to_affine X3' Z3' = x_of (scalar_mul (2 * k + 1) P).
   Proof.
     intros H_R0 H_R1 H_X1.
     unfold LadderStep. simpl.
@@ -284,7 +292,10 @@ Section Montgomery.
     (* let '(regs3, new_prev) := MontLadderCSwap_rec m xP n (st, prev) in norm_regs regs3 new_prev
     = MontLadder_rec m xP n st. *)
 
-    st1 = norm_regs st prev -> MontLadderCSwap_rec m xP n (st, prev) = (st', new_prev) -> MontLadder_rec m xP n st1 = st1' -> st1' = norm_regs st' new_prev.
+    st1 = norm_regs st prev ->
+    MontLadderCSwap_rec m xP n (st, prev) = (st', new_prev) ->
+    MontLadder_rec m xP n st1 = st1' ->
+    st1' = norm_regs st' new_prev.
   Proof.
     induction m.
     - simpl. intros. simplify_tupless. reflexivity.

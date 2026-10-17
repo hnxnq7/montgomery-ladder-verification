@@ -95,7 +95,9 @@ Section TwoRegProb.
        • T_Add maps r1 ↦ secret + r1; since bv_add secret is a permutation,
          {secret+v | v ∈ all_bv} = all_bv as multisets.
        • Hence total_HW_r1 is unchanged ⟹ independent of secret.            *)
-  Lemma mask_security (s1 s2 : bv n) : total_HW_r1 (run_two [mk_two_state s1 (bv_0 n)] mask_prog) = total_HW_r1 (run_two [mk_two_state s2 (bv_0 n)] mask_prog).
+  Lemma mask_security (s1 s2 : bv n) :
+    total_HW_r1 (run_two [mk_two_state s1 (bv_0 n)] mask_prog) =
+    total_HW_r1 (run_two [mk_two_state s2 (bv_0 n)] mask_prog).
   Proof.
     (* Needs: bv_add is a permutation (bv arithmetic) + sum HW over all_bv is constant. *)
   Admitted.
