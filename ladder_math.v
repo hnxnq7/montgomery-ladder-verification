@@ -10,6 +10,7 @@ Open Scope Z_scope.
 From RecordUpdate Require Import RecordUpdate.
 Import RecordSetNotations.
 
+(* Bounded coordinates only; curve membership is supplied by curve25519.v. *)
 Record AffinePoint {p : Z} := {
   aX : Z;
   aY : Z;
@@ -18,8 +19,7 @@ Record AffinePoint {p : Z} := {
 }.
 Arguments AffinePoint : clear implicits.
 
-(* A pair (pX, pZ) represents the affine value  pX * pZ^{-1} mod p.
-   LadderStep works entirely in projective coords -> inversion happens once at the end via proj_to_affine. *)
+(* Projective x-coordinate X/Z; inversion is deferred until the final output. *)
 Record ProjX (p : Z) := {
   pX : Z;
   pZ : Z
@@ -28,10 +28,9 @@ Record ProjX (p : Z) := {
 Definition x_of {p : Z} (Q : AffinePoint p) : Z :=
   aX Q.
 
-
-(* Math — integer-field LadderStep, conditional swap, and CSwap correctness *)
+(* Mathematical ladder and conditional-swap equivalence. *)
 Section Montgomery.
-  Variable p      : Z.             (* prime modulus *)
+  Variable p      : Z.             (* field modulus *)
   Variable p_gt_0 : p > 0.
   Variable fp_inv : Z -> Z -> Z.   (* fp_inv p z = z^{-1} mod p *)
   Variable A24    : Z.             (* (A+2)/4 mod p precomputed from curve *)
@@ -58,13 +57,10 @@ Section Montgomery.
     (x, 1).
   Definition proj_to_affine (pX pZ : Z) : Z :=
     fmul pX (fp_inv p pZ).
-  
+
   Parameter scalar_mul : Z -> AffinePoint p -> AffinePoint p.
 
-  (* Doubling: given projective coords (X:Zc) for [k]P,
-     the doubling formula outputs projective coords for [2k]P.
-     Encodes: x(2P) = U²V² / ((U²-V²)(V²+A24(U²-V²)))
-     where U=X+Z, V=X-Z *)
+  (* Abstract curve assumptions, not used by the concrete Curve25519 proofs. *)
   Axiom doubling_formula : forall k (Q : AffinePoint p) (X Zc : Z), proj_to_affine X Zc = x_of (scalar_mul k Q) ->
     let U  := fadd X Zc in
     let V  := fsub X Zc in
@@ -72,11 +68,8 @@ Section Montgomery.
     let V2 := fsq V in
     let d  := fsub U2 V2 in
     proj_to_affine (fmul U2 V2) (fmul d (fadd V2 (fmul A24 d))) = x_of (scalar_mul (2 * k) Q).
-  
-  (* Differential addition: given projective coords for [k]P and [k+1]P,
-     and the affine x-coord of P, the formula outputs projective coords for [2k+1]P.
-     Encodes: x(P+Q) = (UT+VW)² / (X1*(UT-VW)²)
-     where U=X2+Z2, V=X2-Z2, W=X3+Z3, T=X3-Z3 *)
+
+  (* Differential addition of consecutive multiples, using X1 = x(P). *)
   Axiom diff_add_formula :
     forall k (Q : AffinePoint p) (X2 Z2 X3 Z3 X1 : Z),
     proj_to_affine X2 Z2 = x_of (scalar_mul k Q) ->
@@ -90,39 +83,33 @@ Section Montgomery.
     let Sm := fsub (fmul U T) (fmul V W) in
     proj_to_affine (fsq Sp) (fmul (fsq Sm) X1) = x_of (scalar_mul (2 * k + 1) Q).
 
-  (* LadderStep
-     One iteration of the Montgomery differential-addition chain.
-     Inputs:  X1 = x(P) (public base point, affine)
-              (X2,Z2) = projective [k]P,  (X3,Z3) = projective [k+1]P
-     Output: (X2',Z2',X3',Z3') = ([2k]P, [2k+1]P)                          *)
+  (* Double (X2:Z2) and add (X2:Z2) to (X3:Z3), given their difference X1. *)
   Definition LadderStep (X1 X2 Z2 X3 Z3 : Z) : Z * Z * Z * Z :=
-    let U  := fadd X2 Z2 in          (* U  = X2 + Z2  *)
-    let V  := fsub X2 Z2 in          (* V  = X2 - Z2  *)
-    let W  := fadd X3 Z3 in          (* W  = X3 + Z3  *)
-    let T  := fsub X3 Z3 in          (* T  = X3 - Z3  *)
+    let U  := fadd X2 Z2 in
+    let V  := fsub X2 Z2 in
+    let W  := fadd X3 Z3 in
+    let T  := fsub X3 Z3 in
 
-    let U2 := fsq U in               (* U^2            *)
-    let V2 := fsq V in               (* V^2            *)
+    let U2 := fsq U in
+    let V2 := fsq V in
 
-    let UT := fmul U T in            (* UT              *)
-    let VW := fmul V W in            (* VW              *)
-    let Sp := fadd UT VW in          (* UT + VW         *)
-    let Sm := fsub UT VW in          (* UT - VW         *)
+    let UT := fmul U T in
+    let VW := fmul V W in
+    let Sp := fadd UT VW in
+    let Sm := fsub UT VW in
 
-    let X3' := fsq Sp in             (* (UT + VW)^2           *)
-    let Z3' := fmul (fsq Sm) X1 in  (* (UT - VW)^2 * X1      *)
-    
-    let X2'  := fmul U2 V2 in        (* U^2 * V^2                          *)
-    let diff := fsub U2 V2 in        (* U^2 - V^2                           *)
-    let Z2'  := fmul diff (fadd V2 (fmul A24 diff)) in (* (U^2-V^2)(V^2 + A24*(U^2-V^2))     *)
+    let X3' := fsq Sp in
+    let Z3' := fmul (fsq Sm) X1 in
+
+    let X2'  := fmul U2 V2 in
+    let diff := fsub U2 V2 in
+    let Z2'  := fmul diff (fadd V2 (fmul A24 diff)) in
     (X2', Z2', X3', Z3').
-  
-  
+
   #[local] Hint Rewrite Zmult_mod_idemp_l Zmult_mod_idemp_r
     Zplus_mod_idemp_l Zplus_mod_idemp_r Zminus_mod_idemp_l Zminus_mod_idemp_r : ladder_mod.
 
-  (* U²V² = (X²-Z²)²  i.e. the doubling numerator in its standard form.
-     proof: (X+Z)²(X-Z)² = ((X+Z)(X-Z))² = (X²-Z²)²  by ring mod p *)
+  (* Doubling numerator: (X+Z)^2 (X-Z)^2 = (X^2-Z^2)^2. *)
   Lemma doubling_num_algebra (X Zc : Z) : fmul (fsq (fadd X Zc)) (fsq (fsub X Zc)) = fsq (fsub (fsq X) (fsq Zc)).
   Proof.
     unfold fsq, fadd, fsub, fmul.
@@ -130,8 +117,7 @@ Section Montgomery.
     f_equal. ring.
   Qed.
 
-  (* (UT+VW)² = 4(X₂X₃ - Z₂Z₃)²
-     proof: UT+VW = 2(X₂X₃-Z₂Z₃)  by expanding, then square  *)
+  (* Differential-addition numerator. *)
   Lemma diff_add_sum_algebra (X2 Z2 X3 Z3 : Z) :
     let U  := fadd X2 Z2 in let V := fsub X2 Z2 in
     let W  := fadd X3 Z3 in let T := fsub X3 Z3 in
@@ -143,8 +129,7 @@ Section Montgomery.
     f_equal. ring.
   Qed.
 
-  (* (UT-VW)² = 4(X₂Z₃ - X₃Z₂)²
-     proof: UT-VW = -2(X₂Z₃-X₃Z₂)  by expanding, then square *)
+  (* Differential-addition denominator factor. *)
   Lemma diff_add_dif_algebra (X2 Z2 X3 Z3 : Z) :
     let U  := fadd X2 Z2 in let V := fsub X2 Z2 in
     let W  := fadd X3 Z3 in let T := fsub X3 Z3 in
@@ -171,8 +156,7 @@ Section Montgomery.
     - exact (diff_add_formula k P X2 Z2 X3 Z3 X1 H_R0 H_R1 H_X1).
   Qed.
 
-  
-  (* algorithm 1 *)
+  (* Branching ladder step. *)
   Definition MontLadder_step (X1 : Z) (bit : bool) (st : Z * Z * Z * Z) : Z * Z * Z * Z :=
     let '(X2, Z2, X3, Z3) := st in
     if bit then
@@ -181,10 +165,9 @@ Section Montgomery.
     else
       LadderStep X1 X2 Z2 X3 Z3.
 
-  (* bit extraction *)
   Definition bit_i (n : Z) (i : nat) : bool :=
     Z.testbit n (Z.of_nat i).
-  
+
   Fixpoint MontLadder_rec (m : nat) (X1 n : Z) (st : Z * Z * Z * Z) : Z * Z * Z * Z :=
     match m with
     | O => st
@@ -197,22 +180,18 @@ Section Montgomery.
     let st0 := (1, 0, xP, 1) in
     let '(X2, Z2, _, _) := MontLadder_rec m xP n st0 in
     (X2, Z2).
-  
+
   Tactic Notation "case_match_in" ident(H) "eqn" ":" ident(Hd) :=
     match type of H with
     | context [ match ?x with _ => _ end ] => destruct x eqn:Hd
     end.
-  
+
   Tactic Notation "case_goal_match" "eqn" ":" ident(Hd) :=
     match goal with
     | |- context [ match ?x with _ => _ end ] => destruct x eqn:Hd
     end.
-  
 
-
-  (* CSwap
-     Algorithm 3: conditional swap of the (X2,Z2)/(X3,Z3) register pairs.
-     The swap is controlled by bit b; when b=true the pairs are exchanged.  *)
+  (* Swap the projective pairs when b is true. *)
   Definition CSwap (X2 Z2 X3 Z3 : Z) (b : bool) : Z * Z * Z * Z :=
     if b then (X3, Z3, X2, Z2) else (X2, Z2, X3, Z3).
 
@@ -222,7 +201,7 @@ Section Montgomery.
     let '(X2s, Z2s, X3s, Z3s) := CSwap X2 Z2 X3 Z3 swap in
     let '(X2', Z2', X3', Z3') := LadderStep X1 X2s Z2s X3s Z3s in
     ((X2', Z2', X3', Z3'), bit).
-  
+
   Fixpoint MontLadderCSwap_rec (m : nat) (X1 n : Z) (st : (Z * Z * Z * Z) * bool) : (Z * Z * Z * Z) * bool :=
     match m with
     | O => st
@@ -236,19 +215,18 @@ Section Montgomery.
   Definition MontLadderCSwap (m : nat) (xP n : Z) : Z * Z :=
     let st0 := ((1, 0, xP, 1), false) in
     let '(regs, final_prev) := MontLadderCSwap_rec m xP n st0 in
-    (* normalize: if final_prev=true the registers are still swapped *)
+    (* Restore the logical register order. *)
     let '(X2, Z2, X3, Z3) := regs in
     let '(X2f, Z2f, _, _) := CSwap X2 Z2 X3 Z3 final_prev in
     (X2f, Z2f).
 
-  (* swap the two projective register pairs *)
   Definition swap_regs (st : Z * Z * Z * Z) : Z * Z * Z * Z :=
     let '(X2, Z2, X3, Z3) := st in (X3, Z3, X2, Z2).
 
-  (* undo the current logical swap: if swapped=true, flip back *)
+  (* Recover the branching ladder's register order. *)
   Definition norm_regs (st : Z * Z * Z * Z) (swapped : bool) : Z * Z * Z * Z :=
     if swapped then swap_regs st else st.
-  
+
   (* One step of Algorithm 3, when normalized by its output swap bit,
    equals one step of Algorithm 1 starting from the normalized input. *)
   Lemma MontLadder_step_norm: forall X1 X2 Z2 X3 Z3 (prev bit : bool),
@@ -257,7 +235,6 @@ Section Montgomery.
   Proof.
     intros.
     unfold MontLadderCSwap_step, MontLadder_step, CSwap, norm_regs, swap_regs.
-    (* case split on all four combinations of prev and bit *)
     destruct prev, bit; simpl; try reflexivity.
   Qed.
 
@@ -273,14 +250,11 @@ Section Montgomery.
         let H2 := fresh H in
       apply simple_tuple_inversion in H; destruct H as [H1 H2]
     end.
-  
+
   Ltac simplify_tupless :=
     simplify_tuples; subst.
 
   Lemma rec_eq : forall m xP n st st' st1 st1' prev new_prev,
-    (* let '(regs3, new_prev) := MontLadderCSwap_rec m xP n (st, prev) in norm_regs regs3 new_prev
-    = MontLadder_rec m xP n st. *)
-
     st1 = norm_regs st prev ->
     MontLadderCSwap_rec m xP n (st, prev) = (st', new_prev) ->
     MontLadder_rec m xP n st1 = st1' ->
@@ -291,8 +265,8 @@ Section Montgomery.
     - intros xP n st st' st1 st1' prev new_prev H_norm H_cswap H_ladder.
       destruct st as [[[X2 Z2] X3] Z3].
       cbn [MontLadderCSwap_rec MontLadder_rec] in H_cswap, H_ladder.
-      set (bit := bit_i n m) in *. (* name current bit *)
-      remember (MontLadderCSwap_step xP bit prev (X2, Z2, X3, Z3)) as step_res eqn:H_step. (* freeze intermediate state/result *)
+      set (bit := bit_i n m) in *.
+      remember (MontLadderCSwap_step xP bit prev (X2, Z2, X3, Z3)) as step_res eqn:H_step.
       destruct step_res as [st_mid bit_mid].
       pose proof (MontLadder_step_norm xP X2 Z2 X3 Z3 prev bit) as H_sn.
       rewrite <- H_step in H_sn.
@@ -304,9 +278,7 @@ Section Montgomery.
       + exact H_ladder.
   Qed.
 
-  (* CSwap_eq
-     Correctness: Algorithm 1 (MontLadder) and Algorithm 3 (MontLadderCSwap)
-     produce identical outputs for every input.                               *)
+  (* Functional equivalence; this does not establish implementation timing. *)
   Lemma CSwap_eq m xP n : MontLadderCSwap m xP n = MontLadder m xP n.
   Proof.
     unfold MontLadderCSwap, MontLadder.
@@ -315,10 +287,7 @@ Section Montgomery.
     remember (MontLadder_rec m xP n (1, 0, xP, 1)) as ladder_res eqn:Hladder.
     assert (H_eq : ladder_res = norm_regs st' final_prev).
     { apply (rec_eq m xP n (1, 0, xP, 1) st' (1, 0, xP, 1) ladder_res false final_prev).
-      (* (1,0,xP,1) = norm_regs (1,0,xP,1) false - trivially true since norm_regs _ false = id
-          CSwap-rec output = (st', final_prev) -> HCSwap
-          Ladder-rec output = ladder_res *)
-      - reflexivity.        (* norm_regs (1,0,xP,1) false = (1,0,xP,1) *)
+      - reflexivity.
       - symmetry. exact HCSwap.
       - symmetry. exact Hladder. }
     destruct st' as [[[X2' Z2'] X3'] Z3'].
@@ -376,8 +345,7 @@ Section Montgomery.
       destruct (Z.testbit n (Z.of_nat m)); cbn in Hbit; rewrite <- Hbit; ring.
   Qed.
 
-  (* Loop correctness, conditional on a projective model of scalar multiples.
-     Instantiating this contract for an actual curve remains to be proved. *)
+  (* Generic loop contract; curve25519.v separately connects the ladder to Fiat-Crypto. *)
   Section ProjectiveContract.
     Variable xP : Z.
     (* represents k X Zc means that (X:Zc) represents [k]P. *)
@@ -454,14 +422,4 @@ Section Montgomery.
     Qed.
   End ProjectiveContract.
 
-  (* 1. Define HW of a bv *)
-  (* 2. Define operations given inputs associated with uniformly random vars *)
-      (* HW of a + uniformly random var --> HW of something uniformly random var *)
-  (* 3. start thinking of defining a language w/ only the field operations *)
-
-  (* Definition masked_add_secure :=
-  forall (a1 a2 b r : bv n),
-  distribution of numOfOnes((a1 XOR r) + b) over uniform r
-     = distribution of numOfOnes((a2 XOR r) + b) * *)
 End Montgomery.
-

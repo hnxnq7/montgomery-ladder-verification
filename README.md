@@ -32,7 +32,7 @@ These results have checked proofs independent of the remaining admitted declarat
 
 Complementary registers balance the combined Hamming weight of a value and its bitwise complement. The instruction-level theorem assumes equally weighted bits, atomic paired updates, and observation of the aggregate register HW at instruction boundaries. It assumes the initial pairs are already loaded. It does not establish security for separate register observations, Hamming distance, arithmetic internals, glitches, buses, or physical power.
 
-The processor has its own state-HW observation, including instruction memory, buses, and the execution-result latch. `state_HW_decomposition` proves that a valid state's HW equals the contribution of the program counter, instruction memory, and instruction buses plus `33 * n` from protected storage. Full trace security still requires proving that those public-field observations agree across secrets throughout execution.
+The processor has its own state-HW observation, including instruction memory, bus payloads, and the execution-result latch, even when inactive. Stage, valid bits, write enable, and the natural-number destination index are not counted. `state_HW_decomposition` proves that a valid state's HW equals the contribution of the program counter, instruction memory, and instruction buses plus `33 * n` from protected storage. Full trace security still requires proving that those public-field observations agree across secrets throughout execution.
 
 The processor models field arithmetic as one Execute-stage operation; it is not a verified RTL implementation. X25519 byte encoding, scalar clamping, and twist inputs are outside the current correctness result.
 

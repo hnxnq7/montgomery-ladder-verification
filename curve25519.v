@@ -184,6 +184,7 @@ Proof.
 Qed.
 End Curve25519Bridge.
 
+(* Complete instruction-level program, not the cycle-level processor. *)
 Module Curve25519Machine.
   Local Notation q := (2^255-19)%positive.
 
@@ -251,8 +252,10 @@ Module Curve25519Machine.
     LadderMachine.hw_trace 255 modulus (initial x scalar) program = repeat 7140%nat 7401 /\
     (execute x scalar).2 = [] /\ dual_circuit.valid_state 255 (execute x scalar).1.
   Proof.
-    pose proof (LadderMachine.affine_program_secure 255 modulus (Z_to_bv 255 x) (Z_to_bv 255 121666) (Z_to_bv 255 scalar) 255 inverse_exponent) as H.
-    change (LadderMachine.hw_trace 255 modulus (initial x scalar) program = repeat 7140%nat (S (length program)) /\ (execute x scalar).2 = [] /\ dual_circuit.valid_state 255 (execute x scalar).1) in H.
+    pose proof (LadderMachine.affine_program_secure 255 modulus
+      (Z_to_bv 255 x) (Z_to_bv 255 121666) (Z_to_bv 255 scalar) 255 inverse_exponent) as H.
+    change (LadderMachine.hw_trace 255 modulus (initial x scalar) program = repeat 7140%nat (S (length program)) /\
+      (execute x scalar).2 = [] /\ dual_circuit.valid_state 255 (execute x scalar).1) in H.
     rewrite program_length in H. exact H.
   Qed.
 
@@ -270,6 +273,7 @@ Module Curve25519Machine.
   Qed.
 
   Corollary power_trace_independent x scalar1 scalar2 :
-    LadderMachine.hw_trace 255 modulus (initial x scalar1) program = LadderMachine.hw_trace 255 modulus (initial x scalar2) program.
+    LadderMachine.hw_trace 255 modulus (initial x scalar1) program =
+    LadderMachine.hw_trace 255 modulus (initial x scalar2) program.
   Proof. rewrite (proj1 (program_secure x scalar1)), (proj1 (program_secure x scalar2)). reflexivity. Qed.
 End Curve25519Machine.

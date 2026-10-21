@@ -35,7 +35,6 @@ Print Assumptions curve25519_ladder_correct_mod.
 Print Assumptions curve25519_ladder_correct.
 Print Assumptions curve25519_cswap_correct.
 
-
 Example protected_scalar_zero : Curve25519Machine.output 9 0 = 0.
 Proof.
   pose proof (Curve25519Machine.program_correct Curve25519.M.B 0 ltac:(vm_compute; split; congruence)) as H.

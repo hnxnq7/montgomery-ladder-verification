@@ -12,12 +12,10 @@ Import RecordSetNotations.
 
 Require Import dual_circuit.
 
-(* ══════════════════════════════════════════════════════════════════════════════
-   Processor model — concrete 3-stage pipeline with full register dualization
-   ══════════════════════════════════════════════════════════════════════════════ *)
+(* Cycle-level processor with complementary registers and a paired result latch. *)
 Module StateMachine.
 
-  (* Pipeline stages — mutually exclusive, exactly one active per cycle *)
+  (* One stage runs per cycle; instructions do not overlap. *)
   Inductive PipelineStage :=
     | Fetch
     | Execute
@@ -29,23 +27,14 @@ Section StateMachine.
 
   Record state := mkState {
     pc        : bv n;
-    Regs      : Vector.t (bv n) 32;      (* all 32 general-purpose registers   *)
-    DRegs     : Vector.t (bv n) 32;      (* complements at matching indices    *)
-    InstrMem  : list (bv n);             (* program stored as encoded bitvectors — public *)
-    (* DataMem   : nat -> bv n;             data heap                          *)
-    Stage     : PipelineStage;           (* current pipeline stage             *)
-
-    (* instruction memory bus — public: carries opcodes, no duplication needed *)
-    toiMem    : bool * bv n;             (* (valid, fetch addr)                *)
-    fromiMem  : bool * bv n;             (* (valid, fetched instr)             *)
-    bookkeepingState : bool * nat * bv n * bv n             (* use nat for now *)
-
-    (* data memory bus — may carry secret values, so dualized                  *)
-    (* todMem    : bool * bv n * bv n;      (* (valid, addr, data)   write bus    *)
-    dtodMem   : bool * bv n * bv n;      (* dual write bus                     *)
-    fromdMem  : bool * bv n;             (* (valid, loaded data)  read bus     *)
-    dfromdMem : bool * bv n;             dual read bus                      *)
-  }. 
+    Regs      : Vector.t (bv n) 32;
+    DRegs     : Vector.t (bv n) 32;      (* complements at matching indices *)
+    InstrMem  : list (bv n);            (* encoded instructions *)
+    Stage     : PipelineStage;
+    toiMem    : bool * bv n;            (* request valid, fetch address *)
+    fromiMem  : bool * bv n;            (* response valid, instruction *)
+    bookkeepingState : bool * nat * bv n * bv n (* write enable, destination, value, complement *)
+  }.
   Instance eta : Settable state :=
     settable! mkState <pc; Regs; DRegs; InstrMem; Stage; toiMem; fromiMem; bookkeepingState>.
 
@@ -54,9 +43,7 @@ Section StateMachine.
     (forall j : Fin.t 32, Vector.nth s.(DRegs) j = bv_not (Vector.nth s.(Regs) j)) /\
     (let '(((_, _), val), dval) := s.(bookkeepingState) in dval = bv_not val).
 
-  (* ── Combinational units ─────────────────────────────────────────────── *)
-
-  (* Safe register read/write by nat index *)
+  (* Out-of-range reads return zero; out-of-range writes leave registers unchanged. *)
   Definition read_reg (rs : Vector.t (bv n) 32) (r : var) : bv n :=
     match Fin.of_nat r 32%nat with
     | inleft f  => Vector.nth rs f
@@ -70,8 +57,7 @@ Section StateMachine.
     end.
 
   (* Field arithmetic reduces modulo p before encoding; wrapping first would lose carries. *)
-  (* ALU: decode + compute. Returns (write_enable, rd, val).
-     we=true for arithmetic, false for Observe (no writeback needed). *)
+  (* Returns write enable, destination, and value. Observe is a no-op in this processor. *)
   Definition exec_instr (rs : Vector.t (bv n) 32) (e : instr) : bool * var * bv n :=
     let get r := read_reg rs r in
     match e with
@@ -81,8 +67,8 @@ Section StateMachine.
     | Observe _       => (false, 0%nat, bv_0 n)
     end.
 
-  (* Instruction encoding: bit layout [rs2(5)|rs1(5)|rd(5)|op(2)], requires n ≥ 17.
-     op: 0=IAdd 1=ISub 2=IMul 3=Observe *)
+  (* Layout: [rs2(5)|rs1(5)|rd(5)|op(2)], requiring n >= 17 and indices < 32.
+     Opcodes: 0=IAdd, 1=ISub, 2=IMul, 3=Observe. *)
   Definition encode_instr (e : instr) : bv n :=
     let pack (op rd rs1 rs2 : nat) :=
       Z_to_bv n (Z.of_nat op
@@ -152,11 +138,11 @@ Section StateMachine.
       end.
   Qed.
 
-  (* ── Stage handlers ──────────────────────────────────────────────────── *)
+  (* Stage transitions. *)
   Definition fetch (s : state) : state :=
     s <|toiMem := (true, s.(pc))|> <|Stage := Execute|>.
 
-  (* Execute reads from fromiMem (set by tick_iMem the same cycle fetch ran) *)
+  (* Fetch receives its memory response before the next Execute cycle. *)
   Definition execute (s : state) : state :=
     let '(valid, encoded) := s.(fromiMem) in
     if valid then
@@ -182,7 +168,6 @@ Section StateMachine.
     else
       s <|Stage := Fetch|>.
 
-  (* One clock tick: dispatch on the current pipeline stage *)
   Definition tick (s : state) : state :=
     match s.(Stage) with
     | Fetch     => fetch s
@@ -190,9 +175,7 @@ Section StateMachine.
     | WriteBack => writeback s
     end.
 
-  (* Instruction memory responder (doiMem):
-     if toiMem carries a valid request, encode InstrMem[addr] onto fromiMem
-     and clear the request valid bit. *)
+  (* Respond to a fetch request. Missing addresses return the zero instruction, not a halt. *)
   Definition tick_iMem (s : state) : state :=
     let '(valid, addr) := s.(toiMem) in
     if valid then
@@ -203,12 +186,11 @@ Section StateMachine.
       s <|fromiMem := (true,  encoded)|> <|toiMem   := (false, addr)  |>
     else s.
 
-  (* ── Security proof helpers ─────────────────────────────────────────── *)
+  (* Register-index and record-update lemmas. *)
 
   Lemma to_nat_FS_proj1 {m} (f : Fin.t m) : proj1_sig (Fin.to_nat (Fin.FS f)) = S (proj1_sig (Fin.to_nat f)).
   Proof. exact (Fin.R_sanity 1 f). Qed.
 
-  (* Helper: when Fin.of_nat rd m = inleft f, the index of f equals rd. *)
   Lemma of_nat_inleft_to_nat (rd : nat) : forall (m : nat) (f : Fin.t m),
       Fin.of_nat rd m = inleft f -> proj1_sig (Fin.to_nat f) = rd.
   Proof.
@@ -225,7 +207,6 @@ Section StateMachine.
         * discriminate.
   Qed.
 
-  (* write_reg[j] = v / unchanged depending on whether j = rd *)
   Lemma nth_write_reg_same (rs : Vector.t (bv n) 32) (rd : var) (v : bv n) (j : Fin.t 32) :
     proj1_sig (Fin.to_nat j) = rd ->
     Vector.nth (write_reg rs rd v) j = v.
@@ -253,8 +234,6 @@ Section StateMachine.
     - reflexivity.
   Qed.
 
-  (* ── RecordUpdate field-preservation: setting Stage leaves other fields alone ── *)
-
   Lemma DRegs_set_Stage (s : state) (v : PipelineStage) : (s <|Stage := v|>).(DRegs) = s.(DRegs).
   Proof. destruct s; reflexivity. Qed.
 
@@ -264,7 +243,6 @@ Section StateMachine.
   Lemma bks_set_Stage (s : state) (v : PipelineStage) : (s <|Stage := v|>).(bookkeepingState) = s.(bookkeepingState).
   Proof. destruct s; reflexivity. Qed.
 
-  (* WriteBack true: 4-setter chain — each field projects to its new value *)
   Lemma DRegs_writeback_chain (s : state) (rd : var) (val : bv n) :
       (s <|Regs  := write_reg   s.(Regs)  rd val        |>
          <|DRegs := write_reg s.(DRegs) rd (bv_not val)|>
@@ -309,11 +287,11 @@ Section StateMachine.
     unfold tick.
     destruct s.(Stage).
 
-    - (* Fetch: only toiMem and Stage updated; Regs/DRegs/bks unchanged *)
+    -
       unfold fetch, valid_state. simpl.
       split; [intro j; exact (Hdregs j) | exact Hbks].
 
-    - (* Execute: only bks/fromiMem/pc/Stage updated; Regs/DRegs unchanged *)
+    -
       unfold execute, valid_state.
       destruct s.(fromiMem) as [valid encoded]. simpl.
       destruct valid.
@@ -323,7 +301,7 @@ Section StateMachine.
         * simpl. split; [intro j; exact (Hdregs j) | exact Hbks].
       + simpl. split; [intro j; exact (Hdregs j) | exact Hbks].
 
-    - (* WriteBack: Regs/DRegs updated (valid=true) or Stage-only (valid=false) *)
+    -
       unfold writeback, valid_state.
       destruct s.(bookkeepingState) as [[[valid rd] val] dval] eqn:Hbks_eq.
       destruct valid.
@@ -338,19 +316,17 @@ Section StateMachine.
           { rewrite !nth_write_reg_diff by exact Hne.
             exact (Hdregs j). }
         * rewrite bks_writeback_chain. reflexivity.
-      + (* valid=false: only Stage updated; DRegs/Regs/bks project back to s *)
+      +
         rewrite DRegs_set_Stage, Regs_set_Stage.
         split; [intro j; exact (Hdregs j)|].
         rewrite bks_set_Stage, Hbks_eq.
         exact Hbks.
   Qed.
 
-  (* Encode the LadderStep program as a flat list of instruction words. *)
   Definition ladder_instr_mem : list (bv n) :=
     map encode_instr program.
 
-  (* Build the initial 32-register file from the six input values.
-     Register assignment: 0=X1(public), 1=X2, 2=Z2, 3=X3, 4=Z3, 5=A24(public). *)
+  (* Inputs: 0=X1, 1=X2, 2=Z2, 3=X3, 4=Z3, 5=A24; scratch registers start at zero. *)
   Definition ladder_regs (x2 z2 x3 z3 x1 a24 : bv n) : Vector.t (bv n) 32 :=
     let z := Vector.const (bv_0 n) 32 in
     write_reg
@@ -373,7 +349,6 @@ Section StateMachine.
   Definition full_tick (s : state) : state :=
     tick_iMem (tick s).
 
-  (* Iterate full_tick for a given number of cycles. *)
   Fixpoint run_ticks (s : state) (fuel : nat) : state :=
     match fuel with
     | O       => s
@@ -499,39 +474,36 @@ Section StateMachine.
     apply fmul_bv_correct. exact Hp.
   Qed.
 
-  (* Run one complete LadderStep: 18 instructions × 3 pipeline stages = 54 ticks. *)
+  (* 54 cycles for the 18-instruction program; functional correctness remains to be proved. *)
   Definition ladder_result (x2 z2 x3 z3 x1 a24 : bv n) : state :=
     run_ticks (ladder_init x2 z2 x3 z3 x1 a24) 54.
 
-  (* Security corollary: valid_state is preserved for all 54 ticks. *)
   Lemma ladder_result_valid (x2 z2 x3 z3 x1 a24 : bv n) : valid_state (ladder_result x2 z2 x3 z3 x1 a24).
   Proof.
     unfold ladder_result.
     apply run_ticks_preserves_valid, ladder_init_valid.
   Qed.
 
-  (* ── HW observable ───────────────────────────────────────────────────────── *)
-
-  (* Hamming weight of one n-bit bitvector: count the 1-bits. *)
+  (* Cycle-boundary HW observation. *)
   Definition HW_bv (v : bv n) : nat :=
     fold_left (fun (acc : nat) (b : bool) => if b then (acc + 1)%nat else acc) (bv_to_bits v) 0%nat.
 
-  (* Aggregate HW of the modeled bitvector fields at a cycle boundary. *)
+  (* Counts bitvector fields, including inactive latch/bus payloads.
+     Stage, valid bits, write enable, and the nat destination are not counted. *)
   Definition state_HW (s : state) : nat :=
     let hw_regs  := Vector.fold_left (fun acc v => (acc + HW_bv v)%nat) 0%nat s.(Regs)  in
     let hw_dregs := Vector.fold_left (fun acc v => (acc + HW_bv v)%nat) 0%nat s.(DRegs) in
     let hw_imem  := fold_left (fun acc v => (acc + HW_bv v)%nat) s.(InstrMem) 0%nat     in
     let '(((_, _), val), dval) := s.(bookkeepingState) in
-    ( HW_bv s.(pc)          (* program counter                               *)
-    + hw_regs               (* 32 general-purpose registers                  *)
-    + hw_dregs              (* 32 dual registers         *)
-    + hw_imem               (* instruction memory words                      *)
-    + HW_bv (snd s.(toiMem))    (* fetch address bus                         *)
-    + HW_bv (snd s.(fromiMem))  (* fetch data bus                            *)
-    + HW_bv val             (* E2W result value                              *)
-    + HW_bv dval)%nat.      (* E2W dual value                                *)
+    ( HW_bv s.(pc)
+    + hw_regs
+    + hw_dregs
+    + hw_imem
+    + HW_bv (snd s.(toiMem))
+    + HW_bv (snd s.(fromiMem))
+    + HW_bv val
+    + HW_bv dval)%nat.
 
-  (* The total observable power is state_HW. *)
   Definition total_HW_observable (s : state) : nat :=
     state_HW s.
 
@@ -541,6 +513,7 @@ Section StateMachine.
      Vector.fold_left (fun acc v => acc + HW_bv v)%nat 0%nat s.(DRegs) +
      HW_bv val + HW_bv dval)%nat.
 
+  (* Trace security still requires these fields to agree across secrets. *)
   Definition public_HW (s : state) : nat :=
     (HW_bv s.(pc) +
      fold_left (fun acc v => acc + HW_bv v)%nat s.(InstrMem) 0%nat +
@@ -596,6 +569,7 @@ Section StateMachine.
     unfold public_HW. rewrite Hpc, Himem, Haddr, Hdata. reflexivity.
   Qed.
 
+  (* Initial states only; this is not yet a full leakage-trace theorem. *)
   Theorem power_independence imem regs1 regs2 :
     total_HW_observable (mk_processor_state imem regs1) =
     total_HW_observable (mk_processor_state imem regs2).
@@ -606,4 +580,3 @@ Section StateMachine.
 
 End StateMachine.
 End StateMachine.
-

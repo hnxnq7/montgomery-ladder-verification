@@ -131,7 +131,9 @@ Section Machine.
     specialize (IH s'). destruct (run s' code); cbn in *. congruence.
   Qed.
 
-  Theorem hw_trace_constant s code : valid_state n s -> hw_trace s code = repeat (length (env n s) * N.to_nat n)%nat (S (length code)).
+  Theorem hw_trace_constant s code :
+    valid_state n s ->
+    hw_trace s code = repeat (length (env n s) * N.to_nat n)%nat (S (length code)).
   Proof.
     revert s. induction code as [| e code IH]; intros s Hvalid; cbn [hw_trace length repeat].
     - rewrite valid_state_num_1s by exact Hvalid. reflexivity.
@@ -165,7 +167,9 @@ Section Machine.
   Lemma cswap_correct regs control ra rb b :
     (0 < bv_unsigned p)%Z ->
     read_register n regs control = bit_value b ->
-    interp_env regs (CSwap control ra rb) = (if b then write_register n (write_register n regs ra (read_register n regs rb)) rb (read_register n regs ra) else regs, []).
+    interp_env regs (CSwap control ra rb) =
+    (if b then write_register n (write_register n regs ra (read_register n regs rb)) rb (read_register n regs ra)
+     else regs, []).
   Proof.
     intros Hp Hcontrol. unfold interp_env. rewrite Hcontrol, bit_value_unsigned by exact Hp.
     destruct b; reflexivity.
@@ -197,7 +201,9 @@ Section Machine.
 
   Theorem iteration_secure s index :
     valid_state n s ->
-    hw_trace s (iteration index) = repeat (length (env n s) * N.to_nat n)%nat 28 /\ (run s (iteration index)).2 = [] /\ valid_state n (run s (iteration index)).1.
+    hw_trace s (iteration index) = repeat (length (env n s) * N.to_nat n)%nat 28 /\
+    (run s (iteration index)).2 = [] /\
+    valid_state n (run s (iteration index)).1.
   Proof.
     intro Hvalid. split.
     - rewrite hw_trace_constant by exact Hvalid. reflexivity.
@@ -212,7 +218,8 @@ Section Machine.
     (28 <= length (env n s))%nat ->
     bv_unsigned (read_register n (env n s) 25%nat) = Z.b2z previous ->
     let get := fun r => bv_unsigned (read_register n (env n s) r) in
-    let result := MontLadderCSwap_step (bv_unsigned p) (get 5%nat) (get 0%nat) (bit_i (get 24%nat) index) previous (point_regs s) in
+    let result := MontLadderCSwap_step (bv_unsigned p) (get 5%nat) (get 0%nat)
+      (bit_i (get 24%nat) index) previous (point_regs s) in
     let final := (run s (iteration index)).1 in
     (point_regs final, bv_unsigned (read_register n (env n final) 25%nat)) = (result.1, Z.b2z result.2).
   Proof.
@@ -294,7 +301,8 @@ Section Machine.
     (28 <= length (env n s))%nat ->
     bv_unsigned (read_register n (env n s) 25%nat) = Z.b2z previous ->
     let get := fun r => bv_unsigned (read_register n (env n s) r) in
-    let result := MontLadderCSwap_rec (bv_unsigned p) (get 5%nat) width (get 0%nat) (get 24%nat) (point_regs s, previous) in
+    let result := MontLadderCSwap_rec (bv_unsigned p) (get 5%nat) width
+      (get 0%nat) (get 24%nat) (point_regs s, previous) in
     let final := (run s (loop width)).1 in
     (point_regs final, bv_unsigned (read_register n (env n final) 25%nat)) = (result.1, Z.b2z result.2).
   Proof.
@@ -338,7 +346,9 @@ Section Machine.
     (28 <= length (env n s))%nat ->
     bv_unsigned (read_register n (env n s) 25%nat) = 0 ->
     point_regs s = (1, 0, bv_unsigned (read_register n (env n s) 0%nat), 1) ->
-    projective_output (run s (ladder_code width)).1 = MontLadderCSwap (bv_unsigned p) (bv_unsigned (read_register n (env n s) 5%nat)) width (bv_unsigned (read_register n (env n s) 0%nat)) (bv_unsigned (read_register n (env n s) 24%nat)).
+    projective_output (run s (ladder_code width)).1 =
+    MontLadderCSwap (bv_unsigned p) (bv_unsigned (read_register n (env n s) 5%nat)) width
+      (bv_unsigned (read_register n (env n s) 0%nat)) (bv_unsigned (read_register n (env n s) 24%nat)).
   Proof.
     intros Hp Hlen Hprev Hinit.
     pose proof (loop_correct s width false Hp Hlen Hprev) as Hloop.
@@ -374,7 +384,11 @@ Section Machine.
   Lemma initialize_correct x a24 scalar :
     (0 < bv_unsigned p)%Z ->
     let ready := (run (initial_state x a24 scalar) initialize).1 in
-    point_regs ready = (1, 0, bv_unsigned x, 1) /\ bv_unsigned (read_register n (env n ready) 25%nat) = 0 /\ read_register n (env n ready) 0%nat = x /\ read_register n (env n ready) 5%nat = a24 /\ read_register n (env n ready) 24%nat = scalar.
+    point_regs ready = (1, 0, bv_unsigned x, 1) /\
+    bv_unsigned (read_register n (env n ready) 25%nat) = 0 /\
+    read_register n (env n ready) 0%nat = x /\
+    read_register n (env n ready) 5%nat = a24 /\
+    read_register n (env n ready) 24%nat = scalar.
   Proof.
     intro Hp.
     cbv beta iota zeta delta [initial_state initialize run step interp_env point_regs env read_register write_register List.nth list_insert insert fst snd app repeat].
@@ -402,7 +416,8 @@ Section Machine.
 
   Theorem projective_program_correct x a24 scalar width :
     (0 < bv_unsigned p)%Z ->
-    projective_output (run (initial_state x a24 scalar) (projective_program width)).1 = MontLadderCSwap (bv_unsigned p) (bv_unsigned a24) width (bv_unsigned x) (bv_unsigned scalar).
+    projective_output (run (initial_state x a24 scalar) (projective_program width)).1 =
+    MontLadderCSwap (bv_unsigned p) (bv_unsigned a24) width (bv_unsigned x) (bv_unsigned scalar).
   Proof.
     intro Hp. pose proof (initialize_correct x a24 scalar Hp) as Hinit.
     destruct Hinit as [Hpoints [Hprev [Hx [Ha Hscalar]]]].
@@ -416,7 +431,10 @@ Section Machine.
   Qed.
 
   Theorem projective_program_secure x a24 scalar width :
-    hw_trace (initial_state x a24 scalar) (projective_program width) = repeat (28 * N.to_nat n)%nat (27 * width + 8) /\ (run (initial_state x a24 scalar) (projective_program width)).2 = [] /\ valid_state n (run (initial_state x a24 scalar) (projective_program width)).1.
+    hw_trace (initial_state x a24 scalar) (projective_program width) =
+      repeat (28 * N.to_nat n)%nat (27 * width + 8) /\
+    (run (initial_state x a24 scalar) (projective_program width)).2 = [] /\
+    valid_state n (run (initial_state x a24 scalar) (projective_program width)).1.
   Proof.
     split.
     - rewrite hw_trace_constant by apply initial_state_valid.
