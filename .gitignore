@@ -6,4 +6,5 @@
 .lia.cache
 .nia.cache
 _opam/
+.deps/
 .DS_Store

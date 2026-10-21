@@ -1,6 +1,14 @@
 -Q . ""
+-R .deps/fiat-crypto/src Crypto
+-Q .deps/fiat-crypto/rewriter/src/Rewriter Rewriter
+-R .deps/fiat-crypto/coqprime/src/Coqprime Coqprime
 ladder_math.v
 dual_circuit.v
+ladder_machine.v
+ladder_machine_tests.v
 state_machine.v
+state_machine_tests.v
 two_reg_prob.v
 montgomery_ladder.v
+curve25519.v
+curve25519_tests.v

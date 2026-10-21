@@ -14,34 +14,45 @@ Section HammingWeight.
   Variable n : N. (* width of bv *)
   Variable p : bv n.
 
-  (* ══════════════════════════════════════════════════════════════════════════
-     Field arithmetic — bitvector versions of fadd/fsub/fmul (reduction mod p)
-     ══════════════════════════════════════════════════════════════════════════ *)
+  (* Reduce modulo p before encoding: bitvector arithmetic would wrap modulo 2^n first. *)
   Definition fadd_bv (a b : bv n) : bv n :=
-    bv_modu (bv_add a b) p .
+    Z_to_bv n ((bv_unsigned a + bv_unsigned b) mod bv_unsigned p).
   Definition fsub_bv (a b : bv n) : bv n :=
-    bv_modu (bv_sub a b) p.
+    Z_to_bv n ((bv_unsigned a - bv_unsigned b) mod bv_unsigned p).
   Definition fmul_bv (a b : bv n) : bv n :=
-    bv_modu (bv_mul a b) p.
+    Z_to_bv n ((bv_unsigned a * bv_unsigned b) mod bv_unsigned p).
   Definition fsq_bv  (a : bv n)   : bv n :=
     fmul_bv a a.
 
-  (* ══════════════════════════════════════════════════════════════════════════
-     Probabilistic model — infrastructure for a future information-theoretic
-     leakage argument (not yet connected to the main proof chain)
-     ══════════════════════════════════════════════════════════════════════════ *)
+  Local Lemma mod_to_bv_unsigned (z : Z) : 0 < bv_unsigned p -> bv_unsigned (Z_to_bv n (z mod bv_unsigned p)) = z mod bv_unsigned p.
+  Proof.
+    intros Hp. apply Z_to_bv_small.
+    pose proof (Z.mod_pos_bound z (bv_unsigned p) Hp).
+    pose proof (bv_unsigned_in_range n p). lia.
+  Qed.
+
+  Lemma fadd_bv_correct (a b : bv n) : 0 < bv_unsigned p -> bv_unsigned (fadd_bv a b) = (bv_unsigned a + bv_unsigned b) mod bv_unsigned p.
+  Proof. intros Hp. unfold fadd_bv. apply mod_to_bv_unsigned. exact Hp. Qed.
+
+  Lemma fsub_bv_correct (a b : bv n) : 0 < bv_unsigned p -> bv_unsigned (fsub_bv a b) = (bv_unsigned a - bv_unsigned b) mod bv_unsigned p.
+  Proof. intros Hp. unfold fsub_bv. apply mod_to_bv_unsigned. exact Hp. Qed.
+
+  Lemma fmul_bv_correct (a b : bv n) : 0 < bv_unsigned p -> bv_unsigned (fmul_bv a b) = (bv_unsigned a * bv_unsigned b) mod bv_unsigned p.
+  Proof. intros Hp. unfold fmul_bv. apply mod_to_bv_unsigned. exact Hp. Qed.
+
+  (* Probability-label sketch, without distribution semantics or a soundness proof.
+     Labels alone do not track dependence or guarantee uniformity. *)
   Inductive ProbType :=
     | Prob_concrete
-    | Prob_random (* seed *)
+    | Prob_random
     | Prob_unknown.
-  
+
   Record ProbVar :=
   { Value : bv n;
     Ptype : ProbType
   }.
 
-   (* ProbVar version *)
-  Definition faddsub_prob (a b : ProbType) : ProbType := 
+  Definition faddsub_prob (a b : ProbType) : ProbType :=
     match a, b with
     | Prob_unknown, _ => Prob_unknown
     | _, Prob_unknown => Prob_unknown
@@ -51,7 +62,7 @@ Section HammingWeight.
     | Prob_random, Prob_random => Prob_random
     end.
 
-  Definition fmul_prob (a b : ProbType) : ProbType := 
+  Definition fmul_prob (a b : ProbType) : ProbType :=
     match a, b with
     | Prob_unknown, _ => Prob_unknown
     | _, Prob_unknown => Prob_unknown
@@ -60,14 +71,13 @@ Section HammingWeight.
     | Prob_random, Prob_concrete => Prob_random
     | Prob_random, Prob_random => Prob_unknown
     end.
-  
+
   Definition fadd_probvar (a b : ProbVar) : ProbVar :=
     {|
     Value := fadd_bv a.(Value) b.(Value);
     Ptype := faddsub_prob a.(Ptype) b.(Ptype)
   |}.
 
-  (* NEW: sub and mul *)
   Definition fsub_probvar (a b : ProbVar) : ProbVar :=
     {|
     Value := fsub_bv a.(Value) b.(Value);
@@ -80,32 +90,20 @@ Section HammingWeight.
     Ptype := fmul_prob a.(Ptype) b.(Ptype)
   |}.
 
-  (* another direction: duplicate circuit --> invert? --> HW same without masking *)
-    (* would be cool *)
-
   Inductive ProbHW :=
     | ProbHW_concrete (n : N)
     | ProbHW_random
     | ProbHW_unknown.
-  
-  (* ══════════════════════════════════════════════════════════════════════════
-     Register machine ISA — toy language used to model LadderStep execution
-     ══════════════════════════════════════════════════════════════════════════ *)
-  Definition var :=
-    nat.
+
+  (* Register-machine instructions. *)
+  Definition var := nat.
 
   Inductive instr : Type :=
-    (* | Constant (c : ProbVar)
-    | Var      (i : nat) 
-    | Add (a b : var)
-    | Sub (a b : var)
-    | Mul (a b : var). *)
-
     | IAdd (rd rs1 rs2 : var)
     | ISub (rd rs1 rs2 : var)
     | IMul (rd rs1 rs2 : var)
     | Observe (rd : var).
-  
+
   Open Scope nat.
 
   Notation rX1  := 0  (only parsing).
@@ -133,7 +131,6 @@ Section HammingWeight.
   Notation rT2  := 22 (only parsing).   (* V2 + AD *)
   Notation rZ2' := 23 (only parsing).   (* D * T2 *)
 
-
   Definition program : list instr :=
     [ IAdd rU   rX2  rZ2    (* U   = X2 + Z2 *)
     ; ISub rV   rX2  rZ2    (* V   = X2 - Z2 *)
@@ -154,9 +151,6 @@ Section HammingWeight.
     ; IAdd rT2  rV2  rAD    (* T2  = V2 + AD *)
     ; IMul rZ2' rD   rT2    (* Z2' = D * T2 *)
     ].
-  
-  (* todo: reuse registers --> use less regs *)
-    (* program counter & fetch memory *)
 
   Definition ProbEnv :=
     list ProbVar.
@@ -166,8 +160,6 @@ Section HammingWeight.
     Value := bv_0 n;
     Ptype := Prob_unknown
   |}.
-  
-  (* secret register & public register --> only do dual circuits on the secret *)
 
   Definition prob_read_register (env : ProbEnv) (i : var) : ProbVar :=
     nth i env prob_default_var.
@@ -182,7 +174,7 @@ Section HammingWeight.
 
   Definition num_1s (a : bv n) : nat :=
     num_true (bv_to_bits a).
-  
+
   Definition num_1s_in_list (bvs : list (bv n)) : nat :=
     fold_left (fun acc pv => acc + HW pv) bvs 0.
 
@@ -194,21 +186,16 @@ Section HammingWeight.
 
   Definition prob_interp_instr (env : ProbEnv) (e : instr) : ProbEnv * list Observation :=
     match e with
-    (* | Constant c => c *)
-    (* | Var i      => nth i env default_var *)
     | IAdd rd a b    => (prob_write_register env rd (fadd_probvar (prob_read_register env a) (prob_read_register env b)), [])
     | ISub rd a b    => (prob_write_register env rd (fsub_probvar (prob_read_register env a) (prob_read_register env b)), [])
     | IMul rd a b    => (prob_write_register env rd (fmul_probvar (prob_read_register env a) (prob_read_register env b)), [])
     | Observe rd     => (env, [RegObservation rd (prob_read_register env rd).(Value)])
     end.
-  
-  
-  (* ══════════════════════════════════════════════════════════════════════════
-     Dual Circuit — side-channel security proof via complementary register bank
-     ══════════════════════════════════════════════════════════════════════════ *)
+
+  (* Complementary-register model. *)
   Section DualCircuit.
 
-    (* ── Operational semantics ───────────────────────────────────────────── *)
+    (* Execution. *)
 
     Definition Env :=
       list (bv n).
@@ -229,7 +216,7 @@ Section HammingWeight.
       | Observe rd  => (env, [RegObservation rd (read_register env rd)])
       end.
 
-    (* dual circuit: env holds actual values, denv = map bv_not env *)
+    (* Update the main and complement banks atomically. *)
     Definition dual_interp_instr (s : state) (e : instr) : state * list Observation :=
       let '(env', obs) := interp_instr s.(env) e in
       ({| env := env'; denv := map bv_not env' |}, obs).
@@ -242,32 +229,27 @@ Section HammingWeight.
           (s', obs_acc ++ new_obs))
         (firstn steps prog) (s, []).
 
-      
-
     (* Security definitions *)
 
-    (* invariant: denv is always the bitwise complement of env *)
     Definition valid_state (s : state) : Prop :=
       s.(denv) = map bv_not s.(env).
 
+    (* Unbounded reads include the default value beyond the end of the list. *)
     Definition is_complement (e1 e2 : Env) : Prop :=
       forall i, read_register e2 i = bv_not (read_register e1 i).
 
     Definition num_1s_in_state (s : state) : nat :=
       num_1s_in_list s.(env) + num_1s_in_list s.(denv).
 
-    (* security: total HW per cycle is constant regardless of secret *)
+    (* Constant aggregate register HW after every instruction prefix. *)
     Definition secure (prog : list instr) (s : state) :=
       exists c, forall steps, num_1s_in_state (run s prog steps).1 = c.
 
-
-
-    (* ── Preservation lemmas ─────────────────────────────────────────────── *)
+    (* Register access and preservation. *)
 
     Lemma write_register_length : forall (e : Env) (i : var) (v : bv n), length (write_register e i v) = length e.
     Proof. intros e i v. unfold write_register. apply length_insert. Qed.
 
-    (* Reading back a register you just wrote returns the written value. *)
     Lemma read_register_write_same : forall (e : Env) (i : var) (v : bv n),
       i < length e ->
       read_register (write_register e i v) i = v.
@@ -277,7 +259,6 @@ Section HammingWeight.
       - destruct i; simpl; [reflexivity | apply IH; simpl in Hi; lia].
     Qed.
 
-    (* Reading a register other than the one written returns the original value. *)
     Lemma read_register_write_diff : forall (e : Env) (i j : var) (v : bv n),
       i <> j ->
       read_register (write_register e i v) j = read_register e j.
@@ -296,8 +277,6 @@ Section HammingWeight.
       intros e i. destruct i; simpl; rewrite ?write_register_length; reflexivity.
     Qed.
 
-    (* Arithmetic ops only write to their destination rd.
-       Reading any other register r from env' gives the same value as from env. *)
     Lemma interp_instr_read_other : forall (env0 : Env) (e : instr) (r : var),
       (match e with
        | IAdd rd _ _ | ISub rd _ _ | IMul rd _ _ => r <> rd
@@ -337,9 +316,7 @@ Section HammingWeight.
       length (env (run s prog steps).1) = length (env s).
     Proof. intros s prog steps. unfold run. apply fold_left_preserves_length. Qed.
 
-    
-    
-    (* Valid state preservation *)
+    (* Complement preservation. *)
 
     Lemma dual_interp_preserves_valid : forall (s : state) (e : instr), valid_state (dual_interp_instr s e).1.
     Proof.
@@ -367,9 +344,7 @@ Section HammingWeight.
       valid_state s -> valid_state (run s prog steps).1.
     Proof. intros s prog steps H. unfold run. apply fold_left_run_valid. exact H. Qed.
 
-    
-
-    (* ── HW complement ──────────────────────────────────────────────────────── *)
+    (* Complement bit counts. *)
 
     Lemma fold_left_plus : forall (rest : list bool) (acc : nat),
       fold_left (fun (acc : nat) (b : bool) => if b then acc + 1 else acc) rest acc
@@ -387,8 +362,6 @@ Section HammingWeight.
         destruct b; simpl. rewrite fold_left_plus. lia. rewrite fold_left_plus with (acc := 1). lia.
     Qed.
 
-    (* ── HW complement — the core bit-counting identity ─────────────────── *)
-
     Create HintDb List.
     Hint Rewrite length_map : List.
     Hint Rewrite @length_bv_to_bits : List.
@@ -398,7 +371,6 @@ Section HammingWeight.
       destruct opt; auto.
     Qed.
 
-    (* nth_error and stdpp's !! coincide; idx avoids clash with section variable n *)
     Lemma nth_error_lookup : forall A (xs : list A) (idx : nat) (d : A), nth_error xs idx = xs !! idx.
     Proof.
       intros.
@@ -439,8 +411,6 @@ Section HammingWeight.
       apply length_bv_to_bits.
     Qed.
 
-    (* General accumulator lemma for HW sums — same pattern as fold_left_plus.
-       NB: parameter named [l] not [env] to avoid the state field projector. *)
     Lemma num_1s_in_list_fold_plus : forall (l : list (bv n)) (k : nat),
       fold_left (fun (acc : nat) (pv : bv n) => acc + HW pv) l k =
       fold_left (fun (acc : nat) (pv : bv n) => acc + HW pv) l 0 + k.
@@ -465,18 +435,13 @@ Section HammingWeight.
       + fold_left (λ (acc : nat) (pv : bv n), acc + HW pv) (map bv_not env0) acc
       = length env0 * N.to_nat n + 2 * acc.
     Proof.
-      (* induction before intros acc so the IH generalises over acc *)
       induction env0 as [| a rest IH].
       - simpl. lia.
       - simpl. intros acc.
-        (* shift both accumulators to 0 using the general fold-left lemma *)
         rewrite (num_1s_in_list_fold_plus rest).
         rewrite (num_1s_in_list_fold_plus (map bv_not rest)).
-        (* IH at acc=0: fold rest 0 + fold (map bv_not rest) 0 = length rest * n *)
         pose proof (IH 0) as IH0.
-        (* hw_complement: HW a + HW (bv_not a) = n *)
         pose proof (hw_complement a) as Hc.
-        (* simpl already expanded S (length rest) * n and 2 * acc; lia closes *)
         lia.
     Qed.
 
@@ -486,9 +451,7 @@ Section HammingWeight.
       destruct s. simpl in *. rewrite valid_state_num_1s_induct. lia.
     Qed.
 
-
-
-    (* ── Security theorem: full register set ────────────────────────────── *)
+    (* Full-register HW security. *)
 
     Lemma all_secure : forall (prog : list instr) (init_s : state), valid_state init_s -> secure prog init_s.
     Proof.
@@ -498,9 +461,7 @@ Section HammingWeight.
       rewrite run_preserves_length. reflexivity.
     Qed.
 
-    
-
-    (* ── Security theorem: secret registers only ────────────────────────── *)
+    (* HW security for selected registers. *)
 
     Inductive RegClass := | SecretReg | PublicReg.
     #[global] Instance RegClass_eq_dec : EqDecision RegClass.
@@ -530,7 +491,6 @@ Section HammingWeight.
     Definition secure_secret (prog : list instr) (s : state) (regs : list var) :=
       exists c, forall steps, num_1s_secret_state (run s prog steps).1 regs = c.
 
-    (* helper: reading from a complemented env gives the complement *)
     Lemma read_register_map_not : forall (env : Env) (r : var),
       r < length env ->
       read_register (map bv_not env) r = bv_not (read_register env r).
@@ -539,8 +499,6 @@ Section HammingWeight.
       unfold default_var. rewrite <- map_nth with (f := bv_not). apply nth_indep. rewrite length_map. auto.
     Qed.
 
-    (* fold_left accumulator lemma for num_1s_regs — same pattern as fold_left_plus.
-       NB: parameter named [e] not [env] to avoid shadowing the state field projector. *)
     Lemma num_1s_regs_fold_plus : forall (e : Env) (regs : list var) (acc : nat),
       fold_left (fun (acc : nat) (r : var) => acc + HW (read_register e r)) regs acc =
       fold_left (fun (acc : nat) (r : var) => acc + HW (read_register e r)) regs 0 + acc.
@@ -550,7 +508,6 @@ Section HammingWeight.
       - rewrite IH. rewrite IH with (acc := HW (read_register e r)). lia.
     Qed.
 
-    (* peeling the head off num_1s_regs *)
     Lemma num_1s_regs_cons : forall (e : Env) (r : var) (regs : list var),
       num_1s_regs e (r :: regs) = HW (read_register e r) + num_1s_regs e regs.
     Proof.
@@ -565,19 +522,16 @@ Section HammingWeight.
       num_1s_secret_state s regs = length regs * N.to_nat n.
     Proof.
       intros s regs Hvalid.
-      (* introduce Hbounds AFTER induction so the IH generalises it for the tail *)
       induction regs as [| r rest IH]; intros Hbounds.
-      - (* nil: both sides 0 *)
+      -
         unfold num_1s_secret_state, num_1s_regs. simpl. lia.
       - unfold num_1s_secret_state.
         rewrite !num_1s_regs_cons.
-        (* head register: HW(env[r]) + HW(denv[r]) = n *)
         assert (Hstep : HW (read_register s.(env) r) + HW (read_register s.(denv) r) = N.to_nat n).
         { rewrite Hvalid.
           rewrite read_register_map_not.
           - apply hw_complement.
           - apply Hbounds. left. reflexivity. }
-        (* tail: IH applies with bounds restricted to rest *)
         assert (IHapp : num_1s_secret_state s rest = length rest * N.to_nat n).
         { apply IH. intros r' Hr'. apply Hbounds. right. exact Hr'. }
         unfold num_1s_secret_state in IHapp.
@@ -598,67 +552,61 @@ Section HammingWeight.
       - intros r Hr. rewrite run_preserves_length. apply Hbounds. exact Hr.
     Qed.
 
-    (* ── Compact register allocation (12 registers, same security) ─────── *)
+    (* 12-register allocation: HW security only; functional correctness is not proved here. *)
 
-    Notation cX1  := 0  (only parsing).   (* public: base point x-coord     *)
-    Notation cX2  := 1  (only parsing).   (* secret                          *)
-    Notation cZ2  := 2  (only parsing).   (* secret                          *)
-    Notation cX3  := 3  (only parsing).   (* secret                          *)
-    Notation cZ3  := 4  (only parsing).   (* secret                          *)
-    Notation cA24 := 5  (only parsing).   (* public: curve constant          *)
-    Notation cT0  := 6  (only parsing).   (* temp, reused across the step   *)
-    Notation cT1  := 7  (only parsing).   (* temp                             *)
-    Notation cT2  := 8  (only parsing).   (* temp                            *)
-    Notation cT3  := 9  (only parsing).   (* temp                            *)
-    Notation cT4  := 10 (only parsing).   (* temp                            *)
-    Notation cT5  := 11 (only parsing).   (* temp                            *)
+    Notation cX1  := 0  (only parsing).
+    Notation cX2  := 1  (only parsing).
+    Notation cZ2  := 2  (only parsing).
+    Notation cX3  := 3  (only parsing).
+    Notation cZ3  := 4  (only parsing).
+    Notation cA24 := 5  (only parsing).
+    Notation cT0  := 6  (only parsing).
+    Notation cT1  := 7  (only parsing).
+    Notation cT2  := 8  (only parsing).
+    Notation cT3  := 9  (only parsing).
+    Notation cT4  := 10 (only parsing).
+    Notation cT5  := 11 (only parsing).
 
     Definition compact_program : list instr :=
-      [ IAdd cT0  cX2  cZ2    (* T0 = X2+Z2        = U                       *)
-      ; ISub cT1  cX2  cZ2    (* T1 = X2−Z2        = V                       *)
-      ; IAdd cT2  cX3  cZ3    (* T2 = X3+Z3        = W                       *)
-      ; ISub cT3  cX3  cZ3    (* T3 = X3−Z3        = T                       *)
-      ; IMul cT4  cT0  cT0    (* T4 = U·U          = U²                      *)
-      ; IMul cT5  cT1  cT1    (* T5 = V·V          = V²   [peak: 8 live]     *)
-      ; IMul cT0  cT0  cT3    (* T0 = U·T          = UT   [T3 dead]          *)
-      ; IMul cT3  cT1  cT2    (* T3 = V·W          = VW   [T1,T2 dead]       *)
-      ; IAdd cT1  cT0  cT3    (* T1 = UT+VW        = Sp                      *)
-      ; ISub cT2  cT0  cT3    (* T2 = UT−VW        = Sm   [T0,T3 dead]       *)
-      ; IMul cT1  cT1  cT1    (* T1 = Sp·Sp        = X3'                     *)
-      ; IMul cT0  cT2  cT2    (* T0 = Sm·Sm        = Sm²  [T2 dead]          *)
-      ; IMul cT2  cT0  cX1    (* T2 = Sm²·X1       = Z3'  [T0,X1 dead]       *)
-      ; IMul cT0  cT4  cT5    (* T0 = U²·V²        = X2'                     *)
-      ; ISub cT3  cT4  cT5    (* T3 = U²−V²        = D    [T4 dead]          *)
-      ; IMul cT4  cA24 cT3    (* T4 = A24·D        = AD   [A24 dead]         *)
-      ; IAdd cT5  cT5  cT4    (* T5 = V²+AD        = T2'  [T5,T4 dead]       *)
-      ; IMul cT3  cT3  cT5    (* T3 = D·T2'        = Z2'  [T3,T5 dead]       *)
+      [ IAdd cT0  cX2  cZ2    (* U *)
+      ; ISub cT1  cX2  cZ2    (* V *)
+      ; IAdd cT2  cX3  cZ3    (* W *)
+      ; ISub cT3  cX3  cZ3    (* T *)
+      ; IMul cT4  cT0  cT0    (* U^2 *)
+      ; IMul cT5  cT1  cT1    (* V^2 *)
+      ; IMul cT0  cT0  cT3    (* UT *)
+      ; IMul cT3  cT1  cT2    (* VW *)
+      ; IAdd cT1  cT0  cT3    (* Sp = UT+VW *)
+      ; ISub cT2  cT0  cT3    (* Sm = UT-VW *)
+      ; IMul cT1  cT1  cT1    (* X3' *)
+      ; IMul cT0  cT2  cT2    (* Sm^2 *)
+      ; IMul cT2  cT0  cX1    (* Z3' *)
+      ; IMul cT0  cT4  cT5    (* X2' *)
+      ; ISub cT3  cT4  cT5    (* D = U^2-V^2 *)
+      ; IMul cT4  cA24 cT3    (* A24*D *)
+      ; IAdd cT5  cT5  cT4    (* V^2+A24*D *)
+      ; IMul cT3  cT3  cT5    (* Z2' *)
       ].
-      (* Final: cT0=X2', cT1=X3', cT2=Z3', cT3=Z2'  (4 output regs)         *)
+    (* Outputs: cT0=X2', cT1=X3', cT2=Z3', cT3=Z2'. *)
 
-    (* Generalised public/secret classification
-       declare a list of public registers --> derive the classify function from it *)
+    (* Registers not listed as public are classified as secret. *)
 
     Definition classify_by_list (pub : list var) (r : var) : RegClass :=
       if decide (r ∈ pub) then PublicReg else SecretReg.
 
-    (* Retrofit the original program with the general classifier *)
     Definition ladder_public_regs : list var :=
       [rX1; rA24].  (* 0 and 5     *)
     Definition ladder_classify' : var -> RegClass :=
       classify_by_list ladder_public_regs.
 
-    (* Compact program: same two public inputs, same physical register slots  *)
     Definition compact_public_regs : list var :=
       [cX1; cA24].  (* also 0,5   *)
     Definition compact_classify : var -> RegClass :=
       classify_by_list compact_public_regs.
 
-    (* Secret registers for the compact program (everything except public)    *)
     Definition compact_secret_regs : list var :=
       [cX2; cZ2; cX3; cZ3; cT0; cT1; cT2; cT3; cT4; cT5].
 
-    (* HW of secret registers in compact program is constant
-       same proof structure as all_secure_secret?  *)
     Lemma compact_all_secure_secret : forall (init_s : state),
       valid_state init_s ->
       (forall r, In r compact_secret_regs -> r < length init_s.(env)) ->
@@ -673,35 +621,26 @@ Section HammingWeight.
         rewrite run_preserves_length. apply Hbounds. exact Hr.
     Qed.
 
-    (* ── Selective dualization — bridge to processor model ──────────────────
-       Full valid_state dualizes every register. The StateMachine only allocates
-       dual slots for secret registers, so we need valid_state_partial here as
-       the connecting invariant.                                               *)
-
-    (* valid_state_partial: only secret registers have their complement tracked *)
+    (* Selective pairing experiment; StateMachine pairs all 32 registers. *)
     Definition valid_state_partial (s : state) (classify : var → RegClass) : Prop :=
       forall r,
         classify r = SecretReg →
         r < length s.(env) →
         read_register s.(denv) r = bv_not (read_register s.(env) r).
 
-    (* Observe that valid_state implies valid_state_partial for any classify:
-       if every register has its complement, then in particular secret ones do. *)
     Lemma valid_state_implies_partial :
       forall (s : state) (classify : var → RegClass),
         valid_state s →
-        (forall r, r < length s.(env)) →
         valid_state_partial s classify.
     Proof.
-      intros s classify Hv _Hlen r _Hsec Hr.
+      intros s classify Hv r _Hsec Hr.
       unfold valid_state in Hv.
       rewrite Hv.
       apply read_register_map_not.
       exact Hr.
     Qed.
 
-    (* dual_interp_selective: like dual_interp_instr but only updates denv[rd] when classify says rd is a secret register.
-       - Public register writes leave denv unchanged. *)
+    (* Public writes leave the complement bank unchanged. *)
     Definition dual_interp_selective (classify : var → RegClass) (s : state) (e : instr) : state * list Observation :=
       let '(env', obs) := interp_instr s.(env) e in
       let denv' :=
@@ -709,49 +648,32 @@ Section HammingWeight.
         | IAdd rd _ _ | ISub rd _ _ | IMul rd _ _ =>
             if decide (classify rd = SecretReg)
             then write_register s.(denv) rd (bv_not (read_register env' rd))
-            else s.(denv)                (* public write: no dual slot to update *)
-        | Observe _ => s.(denv)          (* observations never touch denv *)
+            else s.(denv)
+        | Observe _ => s.(denv)
         end in
       ({| env := env'; denv := denv' |}, obs).
 
-    (* Invariant preservation:
-        if s satisfies valid_state_partial (classify), and the instruction writes a secret register,
-        --> then the updated state still satisfies valid_state_partial.  *)
     Lemma dual_interp_selective_preserves_partial :
       forall (classify : var → RegClass) (s : state) (e : instr),
         valid_state_partial s classify →
-        (forall r, r < length s.(env)) →
         length s.(denv) = length s.(env) →
         valid_state_partial (fst (dual_interp_selective classify s e)) classify.
     Proof.
-      intros classify s e Hpartial Hlen Hdlen.
+      intros classify s e Hpartial Hdlen.
       unfold dual_interp_selective, valid_state_partial in *.
       destruct (interp_instr s.(env) e) as [env' obs] eqn:Hinterp.
       simpl fst. intros r Hsec Hr.
       cbn [env denv] in *.
-      assert (Hlen_denv : forall x, x < length s.(denv)) by (intro x; rewrite Hdlen; exact (Hlen x)).
       assert (Hr' : r < length s.(env)).
       { rewrite <- (interp_instr_preserves_length s.(env) e). rewrite Hinterp. exact Hr. }
-      (* After destruct + simpl, Hinterp becomes (write_register env rd v, []) = (env', obs).
-         injection extracts Henv' : write_register ... = env', which we rewrite backwards
-         to convert env' back to env at register r (via read_register_write_diff).        *)
       destruct e as [rd ra rb | rd ra rb | rd ra rb | ro]; simpl in Hinterp;
       injection Hinterp as Henv' _;
       [ | | |
-        (* Observe: env' = env s directly *)
         rewrite <- Henv'; exact (Hpartial r Hsec Hr') ];
-      (* Arithmetic cases: Henv' : write_register (env s) rd v = env'  *)
       destruct (decide (classify rd = SecretReg)) as [Heq | Hne];
       destruct (decide (r = rd)) as [-> | Hne_r].
-      (* Secret write, r = rd: dual slot written with the right value *)
-      all: try (rewrite read_register_write_same by exact (Hlen_denv rd); reflexivity).
-      (* Public write, r = rd: contradiction — r is secret but rd is public *)
+      all: try (rewrite read_register_write_same by (rewrite Hdlen; exact Hr'); reflexivity).
       all: try (exfalso; exact (Hne Hsec)).
-      (* r ≠ rd (both secret-write and public-write sub-cases):
-         - try: undo the denv write_register at rd (only present in the secret case)
-         - rewrite <- Henv': env' → write_register (env s) rd v
-         - rewrite write_diff: read_register at r ≠ rd recovers env s value
-         - Hpartial closes the goal *)
       all: (
         try (rewrite read_register_write_diff by (intro H; exact (Hne_r (eq_sym H))));
         rewrite <- Henv';
@@ -759,22 +681,6 @@ Section HammingWeight.
         exact (Hpartial r Hsec Hr')).
     Qed.
 
-    (* 1. set of public registers --> public are not duplicated *)
-        (* ISA contract? write another update function where only have shadow regs for secret *)
-
-    (* run function on env --> list of obs --> functional correctness hold across run on env and on goal circuit *)
-      (* definition of functional correctness - how to state *)
-    (* observation of circuit & dual same at every  *)
-
-    (* add memory? *)
-      (* define machine: consists of registers & a memory --> 1. InstrMem: list of instructions (alt: store as bv --> translate to instr
-         2. DataMem: store secret & public data
-        --> implement a simple processor: program counter (also public), fetch --> memory respond in 1 cycle with instruction -->
-         decode execute in single cycle *)
-    (* hardware-software contract? *)
-    (* language?  *)
-    (* duplicate dynamically? some registers are 0 until you allocate a pair *)
   End DualCircuit.
 
 End HammingWeight.
-
