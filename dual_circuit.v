@@ -699,10 +699,9 @@ Section HammingWeight.
     Lemma valid_state_implies_partial :
       forall (s : state) (classify : var → RegClass),
         valid_state s →
-        (forall r, r < length s.(env)) →
         valid_state_partial s classify.
     Proof.
-      intros s classify Hv _Hlen r _Hsec Hr.
+      intros s classify Hv r _Hsec Hr.
       unfold valid_state in Hv.
       rewrite Hv.
       apply read_register_map_not.
@@ -729,16 +728,14 @@ Section HammingWeight.
     Lemma dual_interp_selective_preserves_partial :
       forall (classify : var → RegClass) (s : state) (e : instr),
         valid_state_partial s classify →
-        (forall r, r < length s.(env)) →
         length s.(denv) = length s.(env) →
         valid_state_partial (fst (dual_interp_selective classify s e)) classify.
     Proof.
-      intros classify s e Hpartial Hlen Hdlen.
+      intros classify s e Hpartial Hdlen.
       unfold dual_interp_selective, valid_state_partial in *.
       destruct (interp_instr s.(env) e) as [env' obs] eqn:Hinterp.
       simpl fst. intros r Hsec Hr.
       cbn [env denv] in *.
-      assert (Hlen_denv : forall x, x < length s.(denv)) by (intro x; rewrite Hdlen; exact (Hlen x)).
       assert (Hr' : r < length s.(env)).
       { rewrite <- (interp_instr_preserves_length s.(env) e). rewrite Hinterp. exact Hr. }
       (* After destruct + simpl, Hinterp becomes (write_register env rd v, []) = (env', obs).
@@ -753,7 +750,7 @@ Section HammingWeight.
       destruct (decide (classify rd = SecretReg)) as [Heq | Hne];
       destruct (decide (r = rd)) as [-> | Hne_r].
       (* Secret write, r = rd: dual slot written with the right value *)
-      all: try (rewrite read_register_write_same by exact (Hlen_denv rd); reflexivity).
+      all: try (rewrite read_register_write_same by (rewrite Hdlen; exact Hr'); reflexivity).
       (* Public write, r = rd: contradiction — r is secret but rd is public *)
       all: try (exfalso; exact (Hne Hsec)).
       (* r ≠ rd (both secret-write and public-write sub-cases):

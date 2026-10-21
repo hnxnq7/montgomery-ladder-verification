@@ -117,6 +117,23 @@ Example nonwriting_instruction_preserves_pair :
   SM.protected_HW 17 (run [Observe 1%nat] 12 12 3) = 561%nat.
 Proof. vm_compute. reflexivity. Qed.
 
+Example full_pairing_implies_selective_validity : forall classify,
+  valid_state_partial 17
+    {| env := [Z_to_bv 17 3; Z_to_bv 17 5]; denv := List.map bv_not [Z_to_bv 17 3; Z_to_bv 17 5] |} classify.
+Proof. intro classify. apply valid_state_implies_partial. reflexivity. Qed.
+
+Example selective_update_preserves_validity : forall classify e,
+  valid_state_partial 17
+    (dual_interp_selective 17 (Z_to_bv 17 13) classify
+      {| env := [Z_to_bv 17 3; Z_to_bv 17 5]; denv := List.map bv_not [Z_to_bv 17 3; Z_to_bv 17 5] |} e).1 classify.
+Proof.
+  intros classify e. apply dual_interp_selective_preserves_partial.
+  - apply valid_state_implies_partial. reflexivity.
+  - reflexivity.
+Qed.
+
+Print Assumptions valid_state_implies_partial.
+Print Assumptions dual_interp_selective_preserves_partial.
 Print Assumptions SM.decode_encode_instr.
 Print Assumptions SM.instruction_cycle_correct.
 Print Assumptions SM.add_cycle_correct.
