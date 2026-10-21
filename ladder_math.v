@@ -19,7 +19,7 @@ Record AffinePoint {p : Z} := {
 Arguments AffinePoint : clear implicits.
 
 (* A pair (pX, pZ) represents the affine value  pX * pZ^{-1} mod p.
-   LadderStep works entirely in projective coords - inversion happens once at the end via proj_to_affine. *)
+   LadderStep works entirely in projective coords -> inversion happens once at the end via proj_to_affine. *)
 Record ProjX (p : Z) := {
   pX : Z;
   pZ : Z
@@ -28,16 +28,15 @@ Record ProjX (p : Z) := {
 Definition x_of {p : Z} (Q : AffinePoint p) : Z :=
   aX Q.
 
-(* ══════════════════════════════════════════════════════════════════════════════
-   Math — integer-field LadderStep, conditional swap, and CSwap correctness
-   ══════════════════════════════════════════════════════════════════════════════ *)
-Section Montgomery.
-  Variable p      : Z.             (* prime modulus                          *)
-  Variable p_gt_0 : p > 0.
-  Variable fp_inv : Z -> Z -> Z.   (* fp_inv p z = z^{-1} mod p             *)
-  Variable A24    : Z.             (* (A+2)/4 mod p precomputed from curve  *)
 
-  (* ── Field arithmetic ───────────────────────────────────────────────────── *)
+(* Math — integer-field LadderStep, conditional swap, and CSwap correctness *)
+Section Montgomery.
+  Variable p      : Z.             (* prime modulus *)
+  Variable p_gt_0 : p > 0.
+  Variable fp_inv : Z -> Z -> Z.   (* fp_inv p z = z^{-1} mod p *)
+  Variable A24    : Z.             (* (A+2)/4 mod p precomputed from curve *)
+
+  (* Field arithmetic *)
   Definition fadd (a b : Z) : Z :=
     (a + b) mod p.
   Definition fsub (a b : Z) : Z :=
@@ -54,17 +53,6 @@ Section Montgomery.
 
   Create HintDb field.
   Hint Resolve fmul_bounded : field.
-
-  (* Definition scalar_mul (k : Z) (point : AffinePoint p) : AffinePoint p.
-  Proof.
-    refine {|
-      aX := fmul point.(aX) k;
-      aY := fmul point.(aY) k;
-      aX_range := _;
-      aY_range := _;
-    |}.
-    all: auto with field.
-  Qed. *)
 
   Definition affine_to_proj (x : Z) : Z * Z :=
     (x, 1).
@@ -88,7 +76,7 @@ Section Montgomery.
   (* Differential addition: given projective coords for [k]P and [k+1]P,
      and the affine x-coord of P, the formula outputs projective coords for [2k+1]P.
      Encodes: x(P+Q) = (UT+VW)² / (X1*(UT-VW)²)
-    where U=X2+Z2, V=X2-Z2, W=X3+Z3, T=X3-Z3 *)
+     where U=X2+Z2, V=X2-Z2, W=X3+Z3, T=X3-Z3 *)
   Axiom diff_add_formula :
     forall k (Q : AffinePoint p) (X2 Z2 X3 Z3 X1 : Z),
     proj_to_affine X2 Z2 = x_of (scalar_mul k Q) ->
@@ -102,7 +90,7 @@ Section Montgomery.
     let Sm := fsub (fmul U T) (fmul V W) in
     proj_to_affine (fsq Sp) (fmul (fsq Sm) X1) = x_of (scalar_mul (2 * k + 1) Q).
 
-  (* ── LadderStep ────────────────────────────────────────────────────────────
+  (* LadderStep
      One iteration of the Montgomery differential-addition chain.
      Inputs:  X1 = x(P) (public base point, affine)
               (X2,Z2) = projective [k]P,  (X3,Z3) = projective [k+1]P
@@ -130,14 +118,17 @@ Section Montgomery.
     (X2', Z2', X3', Z3').
   
   
+  #[local] Hint Rewrite Zmult_mod_idemp_l Zmult_mod_idemp_r
+    Zplus_mod_idemp_l Zplus_mod_idemp_r Zminus_mod_idemp_l Zminus_mod_idemp_r : ladder_mod.
+
   (* U²V² = (X²-Z²)²  i.e. the doubling numerator in its standard form.
      proof: (X+Z)²(X-Z)² = ((X+Z)(X-Z))² = (X²-Z²)²  by ring mod p *)
   Lemma doubling_num_algebra (X Zc : Z) : fmul (fsq (fadd X Zc)) (fsq (fsub X Zc)) = fsq (fsub (fsq X) (fsq Zc)).
   Proof.
     unfold fsq, fadd, fsub, fmul.
-    rewrite ?Zmult_mod_idemp_l, ?Zmult_mod_idemp_r, ?Zminus_mod_idemp_l, ?Zminus_mod_idemp_r.
-    f_equal.
-  Admitted.
+    rewrite_strat (bottomup (hints ladder_mod)).
+    f_equal. ring.
+  Qed.
 
   (* (UT+VW)² = 4(X₂X₃ - Z₂Z₃)²
      proof: UT+VW = 2(X₂X₃-Z₂Z₃)  by expanding, then square  *)
@@ -145,7 +136,12 @@ Section Montgomery.
     let U  := fadd X2 Z2 in let V := fsub X2 Z2 in
     let W  := fadd X3 Z3 in let T := fsub X3 Z3 in
     fsq (fadd (fmul U T) (fmul V W)) = fmul 4 (fsq (fsub (fmul X2 X3) (fmul Z2 Z3))).
-  Admitted.
+  Proof.
+    cbv zeta.
+    unfold fsq, fadd, fsub, fmul.
+    rewrite_strat (bottomup (hints ladder_mod)).
+    f_equal. ring.
+  Qed.
 
   (* (UT-VW)² = 4(X₂Z₃ - X₃Z₂)²
      proof: UT-VW = -2(X₂Z₃-X₃Z₂)  by expanding, then square *)
@@ -153,7 +149,12 @@ Section Montgomery.
     let U  := fadd X2 Z2 in let V := fsub X2 Z2 in
     let W  := fadd X3 Z3 in let T := fsub X3 Z3 in
     fsq (fsub (fmul U T) (fmul V W)) = fmul 4 (fsq (fsub (fmul X2 Z3) (fmul X3 Z2))).
-  Admitted.
+  Proof.
+    cbv zeta.
+    unfold fsq, fadd, fsub, fmul.
+    rewrite_strat (bottomup (hints ladder_mod)).
+    f_equal. ring.
+  Qed.
 
   Lemma LadderStep_correct (X1 X2 Z2 X3 Z3 k : Z) (P : AffinePoint p) :
     proj_to_affine X2 Z2 = x_of (scalar_mul k P) ->
@@ -207,21 +208,9 @@ Section Montgomery.
     | |- context [ match ?x with _ => _ end ] => destruct x eqn:Hd
     end.
   
-  (* Lemma MontLadder_rec_correct:
-    forall m X1 n,
-    MontLadder_rec m X1 N =  *)
 
-  (* invariant proof *)
-  (* for each st n+1 -> X3 *)
-  (* given x-coord xP of a point P --> x-coord of nP *)
-  (* Lemma MontLadder_correct:
-    forall (m : nat) (xP n : Z) x' z',
-    MontLadder m xP n = (x', z') -> x' = fmul n xP.
-  Proof.
-    intros. unfold MontLadder in *.
-    case_match_in H eqn : Hrec. *)
 
-  (* ── CSwap ─────────────────────────────────────────────────────────────────
+  (* CSwap
      Algorithm 3: conditional swap of the (X2,Z2)/(X3,Z3) register pairs.
      The swap is controlled by bit b; when b=true the pairs are exchanged.  *)
   Definition CSwap (X2 Z2 X3 Z3 : Z) (b : bool) : Z * Z * Z * Z :=
@@ -315,7 +304,7 @@ Section Montgomery.
       + exact H_ladder.
   Qed.
 
-  (* ── CSwap_eq ───────────────────────────────────────────────────────────────
+  (* CSwap_eq
      Correctness: Algorithm 1 (MontLadder) and Algorithm 3 (MontLadderCSwap)
      produce identical outputs for every input.                               *)
   Lemma CSwap_eq m xP n : MontLadderCSwap m xP n = MontLadder m xP n.
@@ -336,6 +325,134 @@ Section Montgomery.
     rewrite H_eq.
     destruct final_prev; simpl; reflexivity.
   Qed.
+
+  Definition xDBL (X Zc : Z) : Z * Z :=
+    let U2 := fsq (fadd X Zc) in
+    let V2 := fsq (fsub X Zc) in
+    let d := fsub U2 V2 in
+    (fmul U2 V2, fmul d (fadd V2 (fmul A24 d))).
+
+  Definition xADD (xP X2 Z2 X3 Z3 : Z) : Z * Z :=
+    let UT := fmul (fadd X2 Z2) (fsub X3 Z3) in
+    let VW := fmul (fsub X2 Z2) (fadd X3 Z3) in
+    (fsq (fadd UT VW), fmul (fsq (fsub UT VW)) xP).
+
+  Lemma LadderStep_decompose xP X2 Z2 X3 Z3 :
+    LadderStep xP X2 Z2 X3 Z3 =
+    let '(Xd, Zd) := xDBL X2 Z2 in
+    let '(Xa, Za) := xADD xP X2 Z2 X3 Z3 in
+    (Xd, Zd, Xa, Za).
+  Proof. reflexivity. Qed.
+
+  Lemma xADD_symmetric xP X2 Z2 X3 Z3 :
+    xADD xP X2 Z2 X3 Z3 = xADD xP X3 Z3 X2 Z2.
+  Proof.
+    unfold xADD.
+    rewrite !diff_add_sum_algebra, !diff_add_dif_algebra.
+    unfold fsq, fadd, fsub, fmul.
+    rewrite_strat (bottomup (hints ladder_mod)).
+    f_equal; f_equal; ring.
+  Qed.
+
+  (* The scalar obtained by appending the remaining m bits to prefix k. *)
+  Fixpoint ladder_index (m : nat) (n k : Z) : Z :=
+    match m with
+    | O => k
+    | S m' => ladder_index m' n (2 * k + if bit_i n m' then 1 else 0)
+    end.
+
+  Lemma ladder_index_value m n k :
+    ladder_index m n k = k * 2 ^ Z.of_nat m + n mod 2 ^ Z.of_nat m.
+  Proof.
+    clear -m n k.
+    revert k. induction m as [|m IH]; intro k.
+    - change (k = k * 1 + n mod 1). rewrite Z.mod_1_r. ring.
+    - cbn [ladder_index]. rewrite IH.
+      rewrite Nat2Z.inj_succ, Z.pow_succ_r by lia.
+      rewrite Z.mul_comm with (n := 2) (m := 2 ^ Z.of_nat m).
+      rewrite Z.rem_mul_r by (try apply Z.pow_nonzero; lia).
+      unfold bit_i.
+      pose proof (Z.testbit_spec' n (Z.of_nat m) (Nat2Z.is_nonneg m)) as Hbit.
+      destruct (Z.testbit n (Z.of_nat m)); cbn in Hbit; rewrite <- Hbit; ring.
+  Qed.
+
+  (* Loop correctness, conditional on a projective model of scalar multiples.
+     Instantiating this contract for an actual curve remains to be proved. *)
+  Section ProjectiveContract.
+    Variable xP : Z.
+    (* represents k X Zc means that (X:Zc) represents [k]P. *)
+    Variable represents : Z -> Z -> Z -> Prop.
+    Hypothesis represents_zero : represents 0 1 0.
+    Hypothesis represents_one : represents 1 xP 1.
+    Hypothesis xDBL_correct : forall k X Zc,
+      represents k X Zc ->
+      let '(Xd, Zd) := xDBL X Zc in represents (2 * k) Xd Zd.
+    Hypothesis xADD_correct : forall k X2 Z2 X3 Z3,
+      represents k X2 Z2 -> represents (k + 1) X3 Z3 ->
+      let '(Xa, Za) := xADD xP X2 Z2 X3 Z3 in represents (2 * k + 1) Xa Za.
+
+    Definition ladder_invariant (k : Z) (st : Z * Z * Z * Z) : Prop :=
+      let '(X2, Z2, X3, Z3) := st in
+      represents k X2 Z2 /\ represents (k + 1) X3 Z3.
+
+    Lemma MontLadder_step_invariant k (bit : bool) st :
+      ladder_invariant k st ->
+      ladder_invariant (2 * k + if bit then 1 else 0) (MontLadder_step xP bit st).
+    Proof.
+      destruct st as [[[X2 Z2] X3] Z3]. intros [H0 H1].
+      pose proof (xADD_correct k X2 Z2 X3 Z3 H0 H1) as Ha.
+      destruct bit; cbn [MontLadder_step]; rewrite LadderStep_decompose.
+      - pose proof (xDBL_correct (k + 1) X3 Z3 H1) as Hd.
+        rewrite <- xADD_symmetric.
+        destruct (xDBL X3 Z3) as [Xd Zd].
+        destruct (xADD xP X2 Z2 X3 Z3) as [Xa Za].
+        cbn [ladder_invariant]. split; [exact Ha|].
+        replace (2 * k + 1 + 1) with (2 * (k + 1)) by ring. exact Hd.
+      - pose proof (xDBL_correct k X2 Z2 H0) as Hd.
+        destruct (xDBL X2 Z2) as [Xd Zd].
+        destruct (xADD xP X2 Z2 X3 Z3) as [Xa Za].
+        cbn [ladder_invariant]. rewrite Z.add_0_r. split; assumption.
+    Qed.
+
+    Lemma MontLadder_rec_invariant m n k st :
+      ladder_invariant k st ->
+      ladder_invariant (ladder_index m n k) (MontLadder_rec m xP n st).
+    Proof.
+      revert k st. induction m as [|m IH]; intros k st Hinv.
+      - exact Hinv.
+      - cbn [ladder_index MontLadder_rec]. apply IH.
+        apply MontLadder_step_invariant. exact Hinv.
+    Qed.
+
+    (* Without a width bound the algorithm computes the low m bits of n. *)
+    Theorem MontLadder_correct_mod m n :
+      let '(X, Zc) := MontLadder m xP n in
+      represents (n mod 2 ^ Z.of_nat m) X Zc.
+    Proof.
+      assert (Hinit : ladder_invariant 0 (1, 0, xP, 1)).
+      { split; assumption. }
+      pose proof (MontLadder_rec_invariant m n 0 _ Hinit) as Hrun.
+      rewrite ladder_index_value, Z.mul_0_l, Z.add_0_l in Hrun.
+      unfold MontLadder.
+      destruct (MontLadder_rec m xP n (1, 0, xP, 1)) as [[[X Zc] Xnext] Znext].
+      exact (proj1 Hrun).
+    Qed.
+
+    Theorem MontLadder_correct m n :
+      0 <= n < 2 ^ Z.of_nat m ->
+      let '(X, Zc) := MontLadder m xP n in represents n X Zc.
+    Proof.
+      intro Hrange. pose proof (MontLadder_correct_mod m n) as H.
+      rewrite Z.mod_small in H by exact Hrange. exact H.
+    Qed.
+
+    Theorem MontLadderCSwap_correct m n :
+      0 <= n < 2 ^ Z.of_nat m ->
+      let '(X, Zc) := MontLadderCSwap m xP n in represents n X Zc.
+    Proof.
+      rewrite CSwap_eq. apply MontLadder_correct.
+    Qed.
+  End ProjectiveContract.
 
   (* 1. Define HW of a bv *)
   (* 2. Define operations given inputs associated with uniformly random vars *)

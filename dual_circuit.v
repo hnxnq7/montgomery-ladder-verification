@@ -14,22 +14,34 @@ Section HammingWeight.
   Variable n : N. (* width of bv *)
   Variable p : bv n.
 
-  (* ══════════════════════════════════════════════════════════════════════════
-     Field arithmetic — bitvector versions of fadd/fsub/fmul (reduction mod p)
-     ══════════════════════════════════════════════════════════════════════════ *)
+  (* Reduce modulo p before encoding: bitvector arithmetic would wrap modulo 2^n first. *)
   Definition fadd_bv (a b : bv n) : bv n :=
-    bv_modu (bv_add a b) p .
+    Z_to_bv n ((bv_unsigned a + bv_unsigned b) mod bv_unsigned p).
   Definition fsub_bv (a b : bv n) : bv n :=
-    bv_modu (bv_sub a b) p.
+    Z_to_bv n ((bv_unsigned a - bv_unsigned b) mod bv_unsigned p).
   Definition fmul_bv (a b : bv n) : bv n :=
-    bv_modu (bv_mul a b) p.
+    Z_to_bv n ((bv_unsigned a * bv_unsigned b) mod bv_unsigned p).
   Definition fsq_bv  (a : bv n)   : bv n :=
     fmul_bv a a.
 
-  (* ══════════════════════════════════════════════════════════════════════════
-     Probabilistic model — infrastructure for a future information-theoretic
-     leakage argument (not yet connected to the main proof chain)
-     ══════════════════════════════════════════════════════════════════════════ *)
+  Local Lemma mod_to_bv_unsigned (z : Z) : 0 < bv_unsigned p -> bv_unsigned (Z_to_bv n (z mod bv_unsigned p)) = z mod bv_unsigned p.
+  Proof.
+    intros Hp. apply Z_to_bv_small.
+    pose proof (Z.mod_pos_bound z (bv_unsigned p) Hp).
+    pose proof (bv_unsigned_in_range n p). lia.
+  Qed.
+
+  Lemma fadd_bv_correct (a b : bv n) : 0 < bv_unsigned p -> bv_unsigned (fadd_bv a b) = (bv_unsigned a + bv_unsigned b) mod bv_unsigned p.
+  Proof. intros Hp. unfold fadd_bv. apply mod_to_bv_unsigned. exact Hp. Qed.
+
+  Lemma fsub_bv_correct (a b : bv n) : 0 < bv_unsigned p -> bv_unsigned (fsub_bv a b) = (bv_unsigned a - bv_unsigned b) mod bv_unsigned p.
+  Proof. intros Hp. unfold fsub_bv. apply mod_to_bv_unsigned. exact Hp. Qed.
+
+  Lemma fmul_bv_correct (a b : bv n) : 0 < bv_unsigned p -> bv_unsigned (fmul_bv a b) = (bv_unsigned a * bv_unsigned b) mod bv_unsigned p.
+  Proof. intros Hp. unfold fmul_bv. apply mod_to_bv_unsigned. exact Hp. Qed.
+
+  (* Probabilistic model — infrastructure for a future information-theoretic leakage argument
+     (not yet connected to the main proof chain) *)
   Inductive ProbType :=
     | Prob_concrete
     | Prob_random (* seed *)
@@ -88,11 +100,8 @@ Section HammingWeight.
     | ProbHW_random
     | ProbHW_unknown.
   
-  (* ══════════════════════════════════════════════════════════════════════════
-     Register machine ISA — toy language used to model LadderStep execution
-     ══════════════════════════════════════════════════════════════════════════ *)
-  Definition var :=
-    nat.
+  (* Register machine ISA — toy language used to model LadderStep execution *)
+  Definition var := nat.
 
   Inductive instr : Type :=
     (* | Constant (c : ProbVar)
@@ -157,7 +166,7 @@ Section HammingWeight.
   
   (* todo: reuse registers --> use less regs *)
     (* program counter & fetch memory *)
-
+  
   Definition ProbEnv :=
     list ProbVar.
 

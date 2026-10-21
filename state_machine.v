@@ -13,7 +13,7 @@ Import RecordSetNotations.
 Require Import dual_circuit.
 
 (* ══════════════════════════════════════════════════════════════════════════════
-   Processor model — concrete 3-stage pipeline with selective register dualization
+   Processor model — concrete 3-stage pipeline with full register dualization
    ══════════════════════════════════════════════════════════════════════════════ *)
 Module StateMachine.
 
@@ -25,18 +25,12 @@ Module StateMachine.
 
 Section StateMachine.
   Variable n : N.
-
-  (* secret_map.(j) names which Regs slot is duplicated into DRegs slot j.
-     e.g. secret_map.[0] = Fin 3 means DRegs[0] mirrors Regs[3].          *)
-    
-  (* conversion from 16 to 32 - doesn't need to be a variable *)
-
-  Variable secret_map : Vector.t (Fin.t 32) 16.
+  Variable modulus : bv n.
 
   Record state := mkState {
     pc        : bv n;
     Regs      : Vector.t (bv n) 32;      (* all 32 general-purpose registers   *)
-    DRegs     : Vector.t (bv n) 16;      (* dual of the 16 secret registers    *)
+    DRegs     : Vector.t (bv n) 32;      (* complements at matching indices    *)
     InstrMem  : list (bv n);             (* program stored as encoded bitvectors — public *)
     (* DataMem   : nat -> bv n;             data heap                          *)
     Stage     : PipelineStage;           (* current pipeline stage             *)
@@ -55,16 +49,10 @@ Section StateMachine.
   Instance eta : Settable state :=
     settable! mkState <pc; Regs; DRegs; InstrMem; Stage; toiMem; fromiMem; bookkeepingState>.
 
-  (* ── Invariant ───────────────────────────────────────────────────────────
-     Every dual slot holds the bitwise complement of its secret original.
-     DRegs[j] = bv_not (Regs[secret_map[j]])  for all j : Fin.t 16         *)
+  (* All register and execution-latch values stay paired, even when inactive. *)
   Definition valid_state (s : state) : Prop :=
-    (* DRegs[j] = bv_not(Regs[secret_map[j]]) for every secret slot *)
-    (forall j : Fin.t 16, Vector.nth s.(DRegs) j = bv_not (Vector.nth s.(Regs) (Vector.nth secret_map j))) /\
-    (* E2W register: when valid, the dual value is the complement of val *)
-    (match s.(bookkeepingState) with
-     | (((v, _), val), dval) => v = true -> dval = bv_not val
-     end).
+    (forall j : Fin.t 32, Vector.nth s.(DRegs) j = bv_not (Vector.nth s.(Regs) j)) /\
+    (let '(((_, _), val), dval) := s.(bookkeepingState) in dval = bv_not val).
 
   (* ── Combinational units ─────────────────────────────────────────────── *)
 
@@ -81,23 +69,17 @@ Section StateMachine.
     | inright _ => rs
     end.
 
+  (* Field arithmetic reduces modulo p before encoding; wrapping first would lose carries. *)
   (* ALU: decode + compute. Returns (write_enable, rd, val).
      we=true for arithmetic, false for Observe (no writeback needed). *)
   Definition exec_instr (rs : Vector.t (bv n) 32) (e : instr) : bool * var * bv n :=
     let get r := read_reg rs r in
     match e with
-    | IAdd rd rs1 rs2 => (true,  rd, bv_add (get rs1) (get rs2))
-    | ISub rd rs1 rs2 => (true,  rd, bv_sub (get rs1) (get rs2))
-    | IMul rd rs1 rs2 => (true,  rd, bv_mul (get rs1) (get rs2))
+    | IAdd rd rs1 rs2 => (true,  rd, fadd_bv n modulus (get rs1) (get rs2))
+    | ISub rd rs1 rs2 => (true,  rd, fsub_bv n modulus (get rs1) (get rs2))
+    | IMul rd rs1 rs2 => (true,  rd, fmul_bv n modulus (get rs1) (get rs2))
     | Observe _       => (false, 0%nat, bv_0 n)
     end.
-
-  (* DRegs selective update: set DRegs[j] := v for every j where secret_map[j] = rd *)
-  Definition update_dregs (dregs : Vector.t (bv n) 16) (rd : var) (v : bv n) : Vector.t (bv n) 16 :=
-    Vector.map2
-      (fun dreg (mapped : Fin.t 32) =>
-        if Nat.eqb (proj1_sig (Fin.to_nat mapped)) rd then v else dreg)
-      dregs secret_map.
 
   (* Instruction encoding: bit layout [rs2(5)|rs1(5)|rd(5)|op(2)], requires n ≥ 17.
      op: 0=IAdd 1=ISub 2=IMul 3=Observe *)
@@ -128,6 +110,48 @@ Section StateMachine.
     | _     => None
     end.
 
+  Definition instr_in_bounds (e : instr) : Prop :=
+    match e with
+    | IAdd rd ra rb | ISub rd ra rb | IMul rd ra rb => (rd < 32 /\ ra < 32 /\ rb < 32)%nat
+    | Observe r => (r < 32)%nat
+    end.
+
+  Local Lemma packed_fields op rd ra rb :
+    0 <= op < 4 -> 0 <= rd < 32 -> 0 <= ra < 32 -> 0 <= rb < 32 ->
+    let word := op + rd * 4 + ra * 128 + rb * 4096 in
+    word mod 4 = op /\ (word / 4) mod 32 = rd /\
+    (word / 128) mod 32 = ra /\ (word / 4096) mod 32 = rb.
+  Proof.
+    intros Hop Hrd Hra Hrb. cbv zeta. repeat split.
+    - replace (op + rd * 4 + ra * 128 + rb * 4096) with (op + (rd + ra * 32 + rb * 1024) * 4) by ring.
+      rewrite Z.mod_add by lia. apply Z.mod_small. exact Hop.
+    - replace (op + rd * 4 + ra * 128 + rb * 4096) with (op + (rd + ra * 32 + rb * 1024) * 4) by ring.
+      rewrite Z.div_add, Z.div_small by lia. rewrite Z.add_0_l.
+      replace (rd + ra * 32 + rb * 1024) with (rd + (ra + rb * 32) * 32) by ring.
+      rewrite Z.mod_add by lia. apply Z.mod_small. exact Hrd.
+    - replace (op + rd * 4 + ra * 128 + rb * 4096) with ((op + rd * 4) + (ra + rb * 32) * 128) by ring.
+      rewrite Z.div_add, Z.div_small by lia. rewrite Z.add_0_l.
+      rewrite Z.mod_add by lia. apply Z.mod_small. exact Hra.
+    - rewrite Z.div_add, Z.div_small by lia. rewrite Z.add_0_l.
+      apply Z.mod_small. exact Hrb.
+  Qed.
+
+  Lemma decode_encode_instr e :
+    (17 <= n)%N -> instr_in_bounds e -> decode_instr (encode_instr e) = Some e.
+  Proof.
+    intros Hwidth Hbounds.
+    assert (Hcapacity : 131072 <= 2 ^ Z.of_N n).
+    { change (2 ^ 17 <= 2 ^ Z.of_N n). apply Z.pow_le_mono_r; lia. }
+    destruct e as [rd ra rb | rd ra rb | rd ra rb | rd]; cbn [instr_in_bounds] in Hbounds.
+    all: unfold decode_instr, encode_instr; cbv beta zeta.
+    all: rewrite Z_to_bv_small by (unfold bv_modulus; lia).
+    all: match goal with
+      | |- context [Z.to_nat ((?op + Z.of_nat ?rd * 4 + Z.of_nat ?ra * 128 + Z.of_nat ?rb * 4096) mod 4)] =>
+          destruct (packed_fields op (Z.of_nat rd) (Z.of_nat ra) (Z.of_nat rb) ltac:(lia) ltac:(lia) ltac:(lia) ltac:(lia)) as [Hop [Hrd [Hra Hrb]]];
+          rewrite Hop, Hrd, Hra, Hrb, !Nat2Z.id; reflexivity
+      end.
+  Qed.
+
   (* ── Stage handlers ──────────────────────────────────────────────────── *)
   Definition fetch (s : state) : state :=
     s <|toiMem := (true, s.(pc))|> <|Stage := Execute|>.
@@ -152,8 +176,8 @@ Section StateMachine.
     let '(((valid, rd), val), dval) := s.(bookkeepingState) in
     if valid then
       s <|Regs  := write_reg s.(Regs) rd val|>
-        <|DRegs := update_dregs s.(DRegs) rd dval|>
-        <|bookkeepingState := (((false, 0%nat), bv_0 n), bv_0 n)|>
+        <|DRegs := write_reg s.(DRegs) rd dval|>
+        <|bookkeepingState := (((false, 0%nat), bv_0 n), bv_not (bv_0 n))|>
         <|Stage := Fetch|>
     else
       s <|Stage := Fetch|>.
@@ -165,9 +189,6 @@ Section StateMachine.
     | Execute   => execute s
     | WriteBack => writeback s
     end.
-
-  (* Memory-side ticks — admitted until bus protocol is defined *)
-  Definition tick_dMem : state -> state. Admitted.
 
   (* Instruction memory responder (doiMem):
      if toiMem carries a valid request, encode InstrMem[addr] onto fromiMem
@@ -184,57 +205,6 @@ Section StateMachine.
 
   (* ── Security proof helpers ─────────────────────────────────────────── *)
 
-  (* nth of Vector.map2 reduces pointwise — direct from stdlib VectorSpec.nth_map2 *)
-  Lemma Vector_nth_map2 : forall (A B C : Type) (m : nat) (f : A -> B -> C)
-      (v1 : Vector.t A m) (v2 : Vector.t B m) (j : Fin.t m),
-    Vector.nth (Vector.map2 f v1 v2) j = f (Vector.nth v1 j) (Vector.nth v2 j).
-  Proof.
-    intros A B C m f v1 v2 j.
-    exact (nth_map2 f v1 v2 j j j eq_refl eq_refl).
-  Qed.
-
-  (* Vector.replace at the same / a different position — from stdlib VectorSpec *)
-  Lemma Vector_nth_replace_same : forall (A : Type) (m : nat) (v : Vector.t A m)
-      (p : Fin.t m) (a : A),
-    Vector.nth (Vector.replace v p a) p = a.
-  Proof.
-    intros A m v p a.
-    exact (nth_replace_eq A m p v a).
-  Qed.
-
-  Lemma Vector_nth_replace_diff : forall (A : Type) (m : nat) (v : Vector.t A m)
-      (p q : Fin.t m) (a : A),
-    p <> q -> Vector.nth (Vector.replace v p a) q = Vector.nth v q.
-  Proof.
-    intros A m v p q a Hpq.
-    (* stdlib: nth_replace_neq n p q (p≠q) v a : nth (replace v q a) p = nth v p
-       our goal: nth (replace v p a) q = nth v q  — swap p and q *)
-    exact (nth_replace_neq A m q p (fun H => Hpq (eq_sym H)) v a).
-  Qed.
-
-  (* update_dregs[j] = v   when secret_map[j] points to rd *)
-  Lemma nth_update_dregs_eq (dregs : Vector.t (bv n) 16) (rd : var) (v : bv n) (j : Fin.t 16) :
-    proj1_sig (Fin.to_nat (Vector.nth secret_map j)) = rd ->
-    Vector.nth (update_dregs dregs rd v) j = v.
-  Proof.
-    intro Heq. unfold update_dregs.
-    rewrite Vector_nth_map2. simpl.
-    rewrite <- Heq, Nat.eqb_refl. reflexivity.
-  Qed.
-
-  (* update_dregs[j] = dregs[j]   when secret_map[j] does not point to rd *)
-  Lemma nth_update_dregs_neq (dregs : Vector.t (bv n) 16) (rd : var) (v : bv n) (j : Fin.t 16) :
-    proj1_sig (Fin.to_nat (Vector.nth secret_map j)) <> rd ->
-    Vector.nth (update_dregs dregs rd v) j = Vector.nth dregs j.
-  Proof.
-    intro Hne. unfold update_dregs.
-    rewrite Vector_nth_map2. simpl.
-    rewrite (proj2 (Nat.eqb_neq _ _) Hne). reflexivity.
-  Qed.
-
-  (* Fin.R_sanity with n=1 gives proj1_sig (to_nat (FS f)) = S (proj1_sig (to_nat f)).
-     Direct reflexivity fails because proj1_sig doesn't commute through the stuck match
-     on abstract to_nat f; R_sanity avoids that by providing a pre-proved equation. *)
   Lemma to_nat_FS_proj1 {m} (f : Fin.t m) : proj1_sig (Fin.to_nat (Fin.FS f)) = S (proj1_sig (Fin.to_nat f)).
   Proof. exact (Fin.R_sanity 1 f). Qed.
 
@@ -297,64 +267,41 @@ Section StateMachine.
   (* WriteBack true: 4-setter chain — each field projects to its new value *)
   Lemma DRegs_writeback_chain (s : state) (rd : var) (val : bv n) :
       (s <|Regs  := write_reg   s.(Regs)  rd val        |>
-         <|DRegs := update_dregs s.(DRegs) rd (bv_not val)|>
-         <|bookkeepingState := (((false, 0%nat), bv_0 n), bv_0 n)|>
-         <|Stage := Fetch|>).(DRegs) = update_dregs s.(DRegs) rd (bv_not val).
+         <|DRegs := write_reg s.(DRegs) rd (bv_not val)|>
+         <|bookkeepingState := (((false, 0%nat), bv_0 n), bv_not (bv_0 n))|>
+         <|Stage := Fetch|>).(DRegs) = write_reg s.(DRegs) rd (bv_not val).
   Proof. destruct s; reflexivity. Qed.
 
   Lemma Regs_writeback_chain (s : state) (rd : var) (val : bv n) :
       (s <|Regs  := write_reg   s.(Regs)  rd val        |>
-         <|DRegs := update_dregs s.(DRegs) rd (bv_not val)|>
-         <|bookkeepingState := (((false, 0%nat), bv_0 n), bv_0 n)|>
+         <|DRegs := write_reg s.(DRegs) rd (bv_not val)|>
+         <|bookkeepingState := (((false, 0%nat), bv_0 n), bv_not (bv_0 n))|>
          <|Stage := Fetch|>).(Regs) = write_reg s.(Regs) rd val.
   Proof. destruct s; reflexivity. Qed.
 
   Lemma bks_writeback_chain (s : state) (rd : var) (val : bv n) :
       (s <|Regs  := write_reg   s.(Regs)  rd val        |>
-         <|DRegs := update_dregs s.(DRegs) rd (bv_not val)|>
-         <|bookkeepingState := (((false, 0%nat), bv_0 n), bv_0 n)|>
-         <|Stage := Fetch|>).(bookkeepingState) = (((false, 0%nat), bv_0 n), bv_0 n).
+         <|DRegs := write_reg s.(DRegs) rd (bv_not val)|>
+         <|bookkeepingState := (((false, 0%nat), bv_0 n), bv_not (bv_0 n))|>
+         <|Stage := Fetch|>).(bookkeepingState) = (((false, 0%nat), bv_0 n), bv_not (bv_0 n)).
   Proof. destruct s; reflexivity. Qed.
 
-  (* ── Security theorem ───────────────────────────────────────────────── *)
+  Definition mk_processor_state (imem : list (bv n)) (regs : Vector.t (bv n) 32) : state :=
+    {| pc := bv_0 n
+     ; Regs := regs
+     ; DRegs := Vector.map bv_not regs
+     ; InstrMem := imem
+     ; Stage := Fetch
+     ; toiMem := (false, bv_0 n)
+     ; fromiMem := (false, bv_0 n)
+     ; bookkeepingState := (((false, 0%nat), bv_0 n), bv_not (bv_0 n)) |}.
 
-  (* top-level theorem: assuming all secret reg secret pub regs pub -->  two processors running w/ different secrets 
-  --> even then the power (# of 1's) is the same*)
-
-  (* separate secret and public registers *)
-  (* Match on [slots] alone, using [in]/[return] to carry the length type.
-     [vals] is passed as a continuation argument so Rocq knows its length
-     matches [slots] without a simultaneous dependent match. *)
-  Fixpoint install_secrets {k : nat}
-      (regs : Vector.t (bv n) 32)
-      (slots : Vector.t (Fin.t 32) k)
-      (vals : Vector.t (bv n) k) : Vector.t (bv n) 32 :=
-    match slots in Vector.t _ k' return Vector.t (bv n) k' -> Vector.t (bv n) 32 with
-    | Vector.nil       => fun _     => regs
-    | Vector.cons s ss => fun vals' => install_secrets (Vector.replace regs s (Vector.hd vals')) ss (Vector.tl vals')
-    end vals.
-  
-  Definition mk_processor_state
-    (imem : list (bv n))
-    (pub_regs : Vector.t (bv n) 32) (* public info — secret slots here are ignored *)
-    (sec_vals : Vector.t (bv n) 16) (* secret info — written over secret_map slots *)
-    : state :=
-  let regs := install_secrets pub_regs secret_map sec_vals in
-  {| pc               := bv_0 n
-   ; Regs             := regs
-   ; DRegs            := Vector.map (fun j => bv_not (Vector.nth regs j)) secret_map
-   ; InstrMem         := imem
-   ; Stage            := Fetch
-   ; toiMem          := (false, bv_0 n)
-   ; fromiMem        := (false, bv_0 n)
-   ; bookkeepingState := (((false, 0%nat), bv_0 n), bv_0 n) |}.
-  (* assign values to registers / initialize  *)
-
-  (* make two processors *)
-  (* pass two different secret info and same public info *)
-  (* equivalence *)
-
-
+  Lemma mk_processor_state_valid imem regs : valid_state (mk_processor_state imem regs).
+  Proof.
+    unfold valid_state, mk_processor_state. cbn [Regs DRegs bookkeepingState]. split.
+    - intro j. rewrite (@Vector.nth_map _ _ _ _ _ j j eq_refl). reflexivity.
+    - reflexivity.
+  Qed.
 
   Lemma tick_preserves_valid : forall (s : state), valid_state s -> valid_state (tick s).
   Proof.
@@ -372,67 +319,31 @@ Section StateMachine.
       destruct valid.
       + destruct (decode_instr encoded) as [e |].
         * destruct (exec_instr s.(Regs) e) as [[we rd] v]. simpl.
-          split; [intro j; exact (Hdregs j) | intro; reflexivity].
+          split; [intro j; exact (Hdregs j) | reflexivity].
         * simpl. split; [intro j; exact (Hdregs j) | exact Hbks].
       + simpl. split; [intro j; exact (Hdregs j) | exact Hbks].
 
     - (* WriteBack: Regs/DRegs updated (valid=true) or Stage-only (valid=false) *)
       unfold writeback, valid_state.
-      (* eqn: keeps the LHS as s.(bookkeepingState) so we can rewrite with it later *)
       destruct s.(bookkeepingState) as [[[valid rd] val] dval] eqn:Hbks_eq.
       destruct valid.
-      + (* valid=true: dval = bv_not val by the bks invariant *)
-        assert (Hdval : dval = bv_not val) by (apply Hbks; reflexivity).
+      +
         subst dval.
         split.
         * intro j.
           rewrite DRegs_writeback_chain, Regs_writeback_chain.
-          destruct (Nat.eq_dec (proj1_sig (Fin.to_nat (Vector.nth secret_map j))) rd) as [Heq | Hne].
-          { rewrite nth_update_dregs_eq by exact Heq.
-            rewrite nth_write_reg_same by exact Heq.
+          destruct (Nat.eq_dec (proj1_sig (Fin.to_nat j)) rd) as [Heq | Hne].
+          { rewrite !nth_write_reg_same by exact Heq.
             reflexivity. }
-          { rewrite nth_update_dregs_neq by exact Hne.
-            rewrite nth_write_reg_diff by exact Hne.
+          { rewrite !nth_write_reg_diff by exact Hne.
             exact (Hdregs j). }
-        * rewrite bks_writeback_chain. intro H. discriminate H.
+        * rewrite bks_writeback_chain. reflexivity.
       + (* valid=false: only Stage updated; DRegs/Regs/bks project back to s *)
         rewrite DRegs_set_Stage, Regs_set_Stage.
         split; [intro j; exact (Hdregs j)|].
         rewrite bks_set_Stage, Hbks_eq.
         exact Hbks.
   Qed.
-
-  (* TODO: extend valid_state to cover bookkeepingState (E2W register carries secrets) *)
-  (* TODO: tick_dMem + DataMem field — data memory bus, dualized like DRegs             *)
-  (* TODO: HW constant per cycle — processor-level analogue of all_secure_secret        *)
-
-  (* Montgomery LadderStep on the processor — concrete instantiation
-     Load the 18-instruction program into InstrMem, fix the secret register
-     map, build an initial valid_state, and run for 54 ticks (18 instrs × 3
-     pipeline stages). *)
-
-  (* Safe Fin.t 32 from a nat index; defaults to F1 for any out-of-range value. *)
-  Definition mk_reg (k : nat) : Fin.t 32 :=
-    match Fin.of_nat k 32 with
-    | inleft f  => f
-    | inright _ => Fin.F1
-    end.
-
-  (* Secret registers: the 16 working registers of one LadderStep iteration.
-     Public: rX1(0) - base-point x-coord; rA24(5) - curve constant (A+2)/4.
-     Secret: projective coordinates X2(1),Z2(2),X3(3),Z3(4) and 12 intermediates
-             U(6)..Sm(15), plus the output X2'(19).  The four outputs
-             X3'(16), Z3'(18), Z2'(23) are left outside this map for clarity. *)
-  (* list_to_fin32_vec: convert nat indices to a Fin.t 32 vector.
-     Both Vector.nil and Vector.cons take A as their first explicit argument. *)
-  Fixpoint list_to_fin32_vec (ks : list nat) : Vector.t (Fin.t 32%nat) (List.length ks) :=
-    match ks return Vector.t (Fin.t 32%nat) (List.length ks) with
-    | []       => @Vector.nil (Fin.t 32%nat)
-    | k :: ks' => @Vector.cons (Fin.t 32%nat) (mk_reg k) _ (list_to_fin32_vec ks')
-    end.
-
-  Definition ladder_secret_map : Vector.t (Fin.t 32%nat) 16 :=
-    list_to_fin32_vec [1; 2; 3; 4; 6; 7; 8; 9; 10; 11; 12; 13; 14; 15; 16; 19]%nat.
 
   (* Encode the LadderStep program as a flat list of instruction words. *)
   Definition ladder_instr_mem : list (bv n) :=
@@ -452,25 +363,11 @@ Section StateMachine.
         4%nat z3)
       5%nat a24.
 
-  (* Initial processor state.  DRegs are set to the bitwise complement of
-     secret_map's projection of Regs, so valid_state holds by construction. *)
   Definition ladder_init (x2 z2 x3 z3 x1 a24 : bv n) : state :=
-    let regs := ladder_regs x2 z2 x3 z3 x1 a24 in
-    {| pc        := bv_0 n
-     ; Regs      := regs
-     ; DRegs     := Vector.map (fun f => bv_not (Vector.nth regs f)) secret_map
-     ; InstrMem  := ladder_instr_mem
-     ; Stage     := Fetch
-     ; toiMem   := (false, bv_0 n)
-     ; fromiMem := (false, bv_0 n)
-     ; bookkeepingState := (((false, 0%nat), bv_0 n), bv_0 n) |}.
+    mk_processor_state ladder_instr_mem (ladder_regs x2 z2 x3 z3 x1 a24).
 
   Lemma ladder_init_valid (x2 z2 x3 z3 x1 a24 : bv n) : valid_state (ladder_init x2 z2 x3 z3 x1 a24).
-  Proof.
-    unfold valid_state, ladder_init. simpl. split.
-    - intro j. rewrite (@Vector.nth_map _ _ _ _ _ j j eq_refl). reflexivity.
-    - intro H. discriminate.
-  Qed.
+  Proof. apply mk_processor_state_valid. Qed.
 
   (* One full clock cycle: processor stage transition + instruction memory response. *)
   Definition full_tick (s : state) : state :=
@@ -483,6 +380,125 @@ Section StateMachine.
     | S fuel' => run_ticks (full_tick s) fuel'
     end.
 
+  Lemma tick_iMem_preserves_valid s : valid_state s -> valid_state (tick_iMem s).
+  Proof.
+    intro Hvalid. unfold tick_iMem. destruct (toiMem s) as [request addr].
+    destruct request; exact Hvalid.
+  Qed.
+
+  Lemma full_tick_preserves_valid s : valid_state s -> valid_state (full_tick s).
+  Proof. intro Hvalid. apply tick_iMem_preserves_valid, tick_preserves_valid, Hvalid. Qed.
+
+  Lemma run_ticks_preserves_valid s cycles : valid_state s -> valid_state (run_ticks s cycles).
+  Proof.
+    revert s. induction cycles; intros s Hvalid; cbn [run_ticks].
+    - exact Hvalid.
+    - apply IHcycles, full_tick_preserves_valid, Hvalid.
+  Qed.
+
+  Local Lemma fetch_cycle counter regs duals imem request response pending encoded :
+    nth_error imem (Z.to_nat (bv_unsigned counter)) = Some encoded ->
+    full_tick (mkState counter regs duals imem Fetch request response pending) =
+    mkState counter regs duals imem Execute (false, counter) (true, encoded) pending.
+  Proof.
+    intro Hfetch. unfold full_tick, tick, fetch, tick_iMem. cbn.
+    rewrite Hfetch. reflexivity.
+  Qed.
+
+  Local Lemma execute_cycle counter regs duals imem addr encoded pending e we rd value :
+    decode_instr encoded = Some e -> exec_instr regs e = (we, rd, value) ->
+    full_tick (mkState counter regs duals imem Execute (false, addr) (true, encoded) pending) =
+    mkState (bv_add counter (Z_to_bv n 1)) regs duals imem WriteBack (false, addr) (false, encoded) (((we, rd), value), bv_not value).
+  Proof.
+    intros Hdecode Hexec. unfold full_tick, tick. cbn [Stage]. unfold execute. cbn [fromiMem Regs].
+    rewrite Hdecode, Hexec. reflexivity.
+  Qed.
+
+  Local Lemma writeback_cycle counter regs duals imem addr response we rd value :
+    full_tick (mkState counter regs duals imem WriteBack (false, addr) response (((we, rd), value), bv_not value)) =
+    mkState counter (if we then write_reg regs rd value else regs)
+      (if we then write_reg duals rd (bv_not value) else duals) imem Fetch (false, addr) response
+      (if we then (((false, 0%nat), bv_0 n), bv_not (bv_0 n)) else (((false, rd), value), bv_not value)).
+  Proof. destruct we; reflexivity. Qed.
+
+  Theorem instruction_cycle_correct s encoded e we rd value :
+    Stage s = Fetch ->
+    nth_error (InstrMem s) (Z.to_nat (bv_unsigned (pc s))) = Some encoded ->
+    decode_instr encoded = Some e ->
+    exec_instr (Regs s) e = (we, rd, value) ->
+    let final := run_ticks s 3 in
+    Regs final = (if we then write_reg (Regs s) rd value else Regs s) /\
+    DRegs final = (if we then write_reg (DRegs s) rd (bv_not value) else DRegs s) /\
+    pc final = bv_add (pc s) (Z_to_bv n 1) /\
+    Stage final = Fetch /\ InstrMem final = InstrMem s.
+  Proof.
+    destruct s as [counter regs duals imem stage request response pending].
+    cbn. intros Hstage Hfetch Hdecode Hexec. subst stage.
+    rewrite fetch_cycle with (encoded := encoded) by exact Hfetch.
+    rewrite execute_cycle with (e := e) (we := we) (rd := rd) (value := value) by assumption.
+    rewrite writeback_cycle.
+    destruct we; repeat split; reflexivity.
+  Qed.
+
+  Lemma read_write_reg_same rs rd value :
+    (rd < 32)%nat -> read_reg (write_reg rs rd value) rd = value.
+  Proof.
+    intro Hrd. unfold read_reg. destruct (Fin.of_nat rd 32) as [j | [extra Hextra]] eqn:Hindex.
+    - apply nth_write_reg_same. exact (of_nat_inleft_to_nat rd 32 j Hindex).
+    - lia.
+  Qed.
+
+  Lemma instruction_cycle_write s e rd value :
+    (17 <= n)%N -> instr_in_bounds e -> (rd < 32)%nat -> Stage s = Fetch ->
+    nth_error (InstrMem s) (Z.to_nat (bv_unsigned (pc s))) = Some (encode_instr e) ->
+    exec_instr (Regs s) e = (true, rd, value) ->
+    read_reg (Regs (run_ticks s 3)) rd = value.
+  Proof.
+    intros Hwidth Hbounds Hrd Hstage Hfetch Hexec.
+    pose proof (instruction_cycle_correct s (encode_instr e) e true rd value Hstage Hfetch
+      (decode_encode_instr e Hwidth Hbounds) Hexec) as Hcycle.
+    destruct Hcycle as [Hregs _]. rewrite Hregs. apply read_write_reg_same. exact Hrd.
+  Qed.
+
+  Corollary add_cycle_correct s rd ra rb :
+    (17 <= n)%N -> 0 < bv_unsigned modulus ->
+    instr_in_bounds (IAdd rd ra rb) -> Stage s = Fetch ->
+    nth_error (InstrMem s) (Z.to_nat (bv_unsigned (pc s))) = Some (encode_instr (IAdd rd ra rb)) ->
+    bv_unsigned (read_reg (Regs (run_ticks s 3)) rd) =
+    (bv_unsigned (read_reg (Regs s) ra) + bv_unsigned (read_reg (Regs s) rb)) mod bv_unsigned modulus.
+  Proof.
+    intros Hwidth Hp Hbounds Hstage Hfetch.
+    rewrite (instruction_cycle_write s (IAdd rd ra rb) rd (fadd_bv n modulus (read_reg (Regs s) ra) (read_reg (Regs s) rb)))
+      by (try assumption; try reflexivity; exact (proj1 Hbounds)).
+    apply fadd_bv_correct. exact Hp.
+  Qed.
+
+  Corollary sub_cycle_correct s rd ra rb :
+    (17 <= n)%N -> 0 < bv_unsigned modulus ->
+    instr_in_bounds (ISub rd ra rb) -> Stage s = Fetch ->
+    nth_error (InstrMem s) (Z.to_nat (bv_unsigned (pc s))) = Some (encode_instr (ISub rd ra rb)) ->
+    bv_unsigned (read_reg (Regs (run_ticks s 3)) rd) =
+    (bv_unsigned (read_reg (Regs s) ra) - bv_unsigned (read_reg (Regs s) rb)) mod bv_unsigned modulus.
+  Proof.
+    intros Hwidth Hp Hbounds Hstage Hfetch.
+    rewrite (instruction_cycle_write s (ISub rd ra rb) rd (fsub_bv n modulus (read_reg (Regs s) ra) (read_reg (Regs s) rb)))
+      by (try assumption; try reflexivity; exact (proj1 Hbounds)).
+    apply fsub_bv_correct. exact Hp.
+  Qed.
+
+  Corollary mul_cycle_correct s rd ra rb :
+    (17 <= n)%N -> 0 < bv_unsigned modulus ->
+    instr_in_bounds (IMul rd ra rb) -> Stage s = Fetch ->
+    nth_error (InstrMem s) (Z.to_nat (bv_unsigned (pc s))) = Some (encode_instr (IMul rd ra rb)) ->
+    bv_unsigned (read_reg (Regs (run_ticks s 3)) rd) =
+    (bv_unsigned (read_reg (Regs s) ra) * bv_unsigned (read_reg (Regs s) rb)) mod bv_unsigned modulus.
+  Proof.
+    intros Hwidth Hp Hbounds Hstage Hfetch.
+    rewrite (instruction_cycle_write s (IMul rd ra rb) rd (fmul_bv n modulus (read_reg (Regs s) ra) (read_reg (Regs s) rb)))
+      by (try assumption; try reflexivity; exact (proj1 Hbounds)).
+    apply fmul_bv_correct. exact Hp.
+  Qed.
+
   (* Run one complete LadderStep: 18 instructions × 3 pipeline stages = 54 ticks. *)
   Definition ladder_result (x2 z2 x3 z3 x1 a24 : bv n) : state :=
     run_ticks (ladder_init x2 z2 x3 z3 x1 a24) 54.
@@ -491,19 +507,7 @@ Section StateMachine.
   Lemma ladder_result_valid (x2 z2 x3 z3 x1 a24 : bv n) : valid_state (ladder_result x2 z2 x3 z3 x1 a24).
   Proof.
     unfold ladder_result.
-    (* run_ticks composes 54 applications of full_tick; each preserves valid_state
-       by tick_preserves_valid + tick_iMem (admitted until tick_iMem is proved). *)
-  Admitted.
-
-  (* ── Top-level security theorem ─────────────────────────────────────────── *)
-
-  Lemma mk_processor_state_valid
-      (imem : list (bv n)) (pub_regs : Vector.t (bv n) 32) (sec_vals : Vector.t (bv n) 16) :
-      valid_state (mk_processor_state imem pub_regs sec_vals).
-  Proof.
-    unfold valid_state, mk_processor_state. simpl. split.
-    - intro j. rewrite (@Vector.nth_map _ _ _ _ _ j j eq_refl). reflexivity.
-    - intro H. discriminate.
+    apply run_ticks_preserves_valid, ladder_init_valid.
   Qed.
 
   (* ── HW observable ───────────────────────────────────────────────────────── *)
@@ -512,9 +516,7 @@ Section StateMachine.
   Definition HW_bv (v : bv n) : nat :=
     fold_left (fun (acc : nat) (b : bool) => if b then (acc + 1)%nat else acc) (bv_to_bits v) 0%nat.
 
-  (* Hamming weight of the full processor state: sum HW_bv over every bitvector
-     field.  This models the instantaneous power draw at one clock edge —
-     every wire that holds a 1 contributes one unit.                          *)
+  (* Aggregate HW of the modeled bitvector fields at a cycle boundary. *)
   Definition state_HW (s : state) : nat :=
     let hw_regs  := Vector.fold_left (fun acc v => (acc + HW_bv v)%nat) 0%nat s.(Regs)  in
     let hw_dregs := Vector.fold_left (fun acc v => (acc + HW_bv v)%nat) 0%nat s.(DRegs) in
@@ -522,7 +524,7 @@ Section StateMachine.
     let '(((_, _), val), dval) := s.(bookkeepingState) in
     ( HW_bv s.(pc)          (* program counter                               *)
     + hw_regs               (* 32 general-purpose registers                  *)
-    + hw_dregs              (* 16 dual registers (secret complements)         *)
+    + hw_dregs              (* 32 dual registers         *)
     + hw_imem               (* instruction memory words                      *)
     + HW_bv (snd s.(toiMem))    (* fetch address bus                         *)
     + HW_bv (snd s.(fromiMem))  (* fetch data bus                            *)
@@ -533,18 +535,74 @@ Section StateMachine.
   Definition total_HW_observable (s : state) : nat :=
     state_HW s.
 
-  (* ── Power-independence theorem ──────────────────────────────────────────── *)
-  (* Two processors with the same public registers and instruction memory but
-     different secrets produce identical observable Hamming weight.              *)
-  Theorem power_independence
-      (imem     : list (bv n))
-      (pub_regs : Vector.t (bv n) 32)
-      (sec1 sec2 : Vector.t (bv n) 16) :
-      total_HW_observable (mk_processor_state imem pub_regs sec1) =
-      total_HW_observable (mk_processor_state imem pub_regs sec2).
+  Definition protected_HW (s : state) : nat :=
+    let '(((_, _), val), dval) := s.(bookkeepingState) in
+    (Vector.fold_left (fun acc v => acc + HW_bv v)%nat 0%nat s.(Regs) +
+     Vector.fold_left (fun acc v => acc + HW_bv v)%nat 0%nat s.(DRegs) +
+     HW_bv val + HW_bv dval)%nat.
+
+  Definition public_HW (s : state) : nat :=
+    (HW_bv s.(pc) +
+     fold_left (fun acc v => acc + HW_bv v)%nat s.(InstrMem) 0%nat +
+     HW_bv (snd s.(toiMem)) + HW_bv (snd s.(fromiMem)))%nat.
+
+  Local Lemma vector_pair_HW {m} (regs : Vector.t (bv n) m) : forall a b,
+    (Vector.fold_left (fun acc v => acc + HW_bv v)%nat a regs +
+     Vector.fold_left (fun acc v => acc + HW_bv v)%nat b (Vector.map bv_not regs))%nat =
+    (m * N.to_nat n + a + b)%nat.
   Proof.
-    (* Both sides reduce to 16 * N.to_nat n via valid_state + hw_complement. *)
-  Admitted.
+    induction regs as [| value m rest IH]; intros a b; cbn [Vector.fold_left Vector.map].
+    - lia.
+    - rewrite IH. pose proof (hw_complement n value) as Hpair.
+      change (HW_bv value + HW_bv (bv_not value) = N.to_nat n)%nat in Hpair. nia.
+  Qed.
+
+  Lemma valid_state_duals s : valid_state s -> DRegs s = Vector.map bv_not (Regs s).
+  Proof.
+    intros [Hregs _]. apply (proj1 (Vector.eq_nth_iff _ _ _ _)).
+    intros j k Heq. subst k. rewrite (@Vector.nth_map _ _ _ _ _ j j eq_refl). apply Hregs.
+  Qed.
+
+  (* The 32 register pairs and the execution-latch pair each contribute n bits. *)
+  Theorem protected_HW_constant s : valid_state s -> protected_HW s = (33 * N.to_nat n)%nat.
+  Proof.
+    intro Hvalid. pose proof (valid_state_duals s Hvalid) as Hduals.
+    destruct Hvalid as [_ Hlatch]. unfold protected_HW. rewrite Hduals.
+    destruct (bookkeepingState s) as [[[active rd] value] dual]. cbn in Hlatch. subst dual.
+    pose proof (vector_pair_HW (Regs s) 0%nat 0%nat) as Hregs.
+    pose proof (hw_complement n value) as Hpair.
+    change (HW_bv value + HW_bv (bv_not value) = N.to_nat n)%nat in Hpair. lia.
+  Qed.
+
+  Corollary run_ticks_protected_HW s cycles :
+    valid_state s -> protected_HW (run_ticks s cycles) = (33 * N.to_nat n)%nat.
+  Proof. intro Hvalid. apply protected_HW_constant, run_ticks_preserves_valid, Hvalid. Qed.
+
+  Lemma state_HW_decomposition s : valid_state s -> state_HW s = (public_HW s + 33 * N.to_nat n)%nat.
+  Proof.
+    intro Hvalid. pose proof (protected_HW_constant s Hvalid) as Hprotected.
+    unfold state_HW, public_HW, protected_HW in *.
+    destruct (bookkeepingState s) as [[[active rd] value] dual]. lia.
+  Qed.
+
+  Theorem state_HW_public s1 s2 :
+    valid_state s1 -> valid_state s2 ->
+    pc s1 = pc s2 -> InstrMem s1 = InstrMem s2 ->
+    snd (toiMem s1) = snd (toiMem s2) -> snd (fromiMem s1) = snd (fromiMem s2) ->
+    state_HW s1 = state_HW s2.
+  Proof.
+    intros H1 H2 Hpc Himem Haddr Hdata.
+    rewrite !state_HW_decomposition by assumption.
+    unfold public_HW. rewrite Hpc, Himem, Haddr, Hdata. reflexivity.
+  Qed.
+
+  Theorem power_independence imem regs1 regs2 :
+    total_HW_observable (mk_processor_state imem regs1) =
+    total_HW_observable (mk_processor_state imem regs2).
+  Proof.
+    unfold total_HW_observable. apply state_HW_public;
+      try apply mk_processor_state_valid; reflexivity.
+  Qed.
 
 End StateMachine.
 End StateMachine.
