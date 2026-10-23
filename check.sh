@@ -2,7 +2,7 @@
 set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 
-for module in ladder_math dual_circuit ladder_machine ladder_machine_tests state_machine state_machine_tests two_reg_prob montgomery_ladder; do
+for module in ladder_math dual_circuit ladder_machine ladder_machine_tests state_machine state_machine_tests processor_refinement processor_refinement_tests two_reg_prob montgomery_ladder; do
   printf 'Checking %s.v\n' "$module"
   coqc -Q . "" "$module.v"
 done

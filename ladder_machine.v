@@ -5,7 +5,7 @@ Open Scope Z_scope.
 
 Module LadderMachine.
 
-(* This instruction-level extension is not yet implemented by StateMachine. *)
+(* Instruction-level ladder, connected to processor cycles in processor_refinement.v. *)
 Inductive instr :=
   | Base (e : dual_circuit.instr)
   | Copy (rd rs : nat)

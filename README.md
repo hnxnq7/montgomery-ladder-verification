@@ -12,19 +12,24 @@ Prove that the fetch/execute/writeback processor computes the correct Curve25519
 | --- | --- |
 | [ladder_math.v](ladder_math.v) | Mathematical ladder definitions, field identities, branching/CSwap equivalence, and loop correctness under an abstract projective specification. |
 | [dual_circuit.v](dual_circuit.v) | Field operations on bitvectors, register-machine instructions, complementary-register HW proofs, and a probability-label sketch. |
-| [state_machine.v](state_machine.v) | Processor state, instruction encoding, fetch/execute/writeback semantics, arithmetic-cycle correctness, and processor leakage definitions. |
+| [state_machine.v](state_machine.v) | Processor state, instruction encoding, fetch/execute/writeback semantics, LadderStep and complete-iteration correctness, and processor leakage proofs. |
+| [processor_refinement.v](processor_refinement.v) | Instruction correspondence and full-loop/affine correctness for continuous processor execution. |
 | [ladder_machine.v](ladder_machine.v) | Instruction-level implementation of the full ladder and affine conversion, with correctness and aggregate-register HW proofs. |
-| [curve25519.v](curve25519.v) | Connection to Fiat-Crypto's Curve25519 model and the combined instruction-level correctness/security theorem. |
+| [curve25519.v](curve25519.v) | Connection to Fiat-Crypto's Curve25519 model and the combined processor correctness/security theorem. |
 | [two_reg_prob.v](two_reg_prob.v) | Two-register masking experiment using ensembles; the aggregate-HW security statement is unfinished. |
 | [montgomery_ladder.v](montgomery_ladder.v) | Convenience imports for the core models. |
-| [state_machine_tests.v](state_machine_tests.v), [ladder_machine_tests.v](ladder_machine_tests.v), [curve25519_tests.v](curve25519_tests.v) | Regression examples, assumption checks, register-coverage and latch tests. |
+| [state_machine_tests.v](state_machine_tests.v), [processor_refinement_tests.v](processor_refinement_tests.v), [ladder_machine_tests.v](ladder_machine_tests.v), [curve25519_tests.v](curve25519_tests.v) | Regression examples, assumption checks, register-coverage and latch tests. |
 | [check.sh](check.sh), [setup_fiat_crypto.sh](setup_fiat_crypto.sh), [_CoqProject](_CoqProject) | Build configuration and pinned Fiat-Crypto dependency setup. |
 
 ## Verified Results
 
 - **Mathematics:** both ladder formulations return `X0([k]P)` for a Curve25519 point `P` and a scalar within the chosen bit width. Zero encodes infinity. The proof uses Fiat-Crypto's curve theory.
-- **Processor:** in-bounds instruction encodings round-trip at widths of at least 17 bits. Addition, subtraction, and multiplication compute the correct field result after three cycles. All 32 registers and the execution-result latch remain paired throughout execution, including when the latch is inactive. Their combined HW is always `33 * n` for `n`-bit words; `power_independence` proves equal initial state HW for arbitrary register values and the same instruction memory.
-- **Instruction-level model:** `Curve25519Machine.protected_ladder_correct_and_secure` proves full-ladder correctness and a constant aggregate-register HW trace, including affine conversion. This is not yet a theorem about the processor.
+- **Processor:** in-bounds instruction encodings round-trip at widths of at least 21 bits. Arithmetic, Copy, GetBit, Xor, and CSwap have checked three-cycle correctness proofs, including aliased operands. All 32 registers and both execution-result latches remain paired throughout execution, including when inactive. Their combined HW is always `34 * n` for `n`-bit words.
+- **Processor LadderStep:** `ladder_block_correct` identifies the four output registers after 54 cycles with the mathematical `LadderStep`, for any initial register file, a positive represented modulus, and word widths of at least 21 bits. Scratch registers need not start at zero; `ladder_result_correct` specializes this to the supplied initializer.
+- **Processor iteration:** `iteration_correct` proves that a standalone 27-instruction, 81-cycle program implements `MontLadderCSwap_step`, including bit extraction, conditional swaps, and copying coordinates back. It preserves the scalar and public inputs, saves the current bit, and finishes in Fetch at instruction 27. The bit index must be below 256 and the incoming previous-bit register must contain 0 or 1; the same width and modulus requirements apply.
+- **Processor leakage:** `processor_trace_independent` proves equal full state-HW traces for arbitrary initial register values, the same instruction memory, and the same cycle budget. The trace includes the initial state and every subsequent cycle; public control and instruction-bus fields remain equal across runs.
+- **Full processor program:** `ProcessorRefinement.projective_program_correct` and `ProcessorRefinement.affine_program_correct` prove the initialized loop, final swap, and affine conversion over continuous processor cycles. `run_code_correct` connects shared-memory execution to instruction semantics, with explicit register, bit-index, and program-counter bounds.
+- **Combined result:** `Curve25519Processor.protected_ladder_correct_and_secure` proves correct Curve25519 outputs and equal full state-HW traces for any two 255-bit scalars and the same public curve point. The 7,400-instruction program runs for 22,200 cycles; its trace contains 22,201 observations, including the initial state. `program_boundary` places the final state in Fetch at instruction 7,400. The output is read separately after this fixed budget; the model has no halt instruction.
 
 These results have checked proofs independent of the remaining admitted declarations. The repository as a whole still contains unfinished proofs.
 
@@ -32,15 +37,15 @@ These results have checked proofs independent of the remaining admitted declarat
 
 Complementary registers balance the combined Hamming weight of a value and its bitwise complement. The instruction-level theorem assumes equally weighted bits, atomic paired updates, and observation of the aggregate register HW at instruction boundaries. It assumes the initial pairs are already loaded. It does not establish security for separate register observations, Hamming distance, arithmetic internals, glitches, buses, or physical power.
 
-The processor has its own state-HW observation, including instruction memory, bus payloads, and the execution-result latch, even when inactive. Stage, valid bits, write enable, and the natural-number destination index are not counted. `state_HW_decomposition` proves that a valid state's HW equals the contribution of the program counter, instruction memory, and instruction buses plus `33 * n` from protected storage. Full trace security still requires proving that those public-field observations agree across secrets throughout execution.
+The processor has its own state-HW observation, including instruction memory, bus payloads, and both execution-result latches, even when inactive. Stage, valid bits, write enables, and natural-number destination indices are not counted. `state_HW_decomposition` proves that a valid state's HW equals the contribution of the program counter, instruction memory, and instruction buses plus `34 * n` from protected storage. CSwap reads its control and both operands before writing and assumes two atomic paired writes in one WriteBack cycle, regardless of the control value.
 
 The processor models field arithmetic as one Execute-stage operation; it is not a verified RTL implementation. X25519 byte encoding, scalar clamping, and twist inputs are outside the current correctness result.
 
 ## To Do
 
-1. Implement scalar-bit handling and swaps in the processor while preserving register and latch protection.
-2. Prove the complete ladder and affine conversion directly over processor cycles.
-3. Prove equality of the full processor leakage traces across secrets, including their lengths and public control/bus behavior.
+1. Refine the processor into hardware with explicit arithmetic internals and justify or replace the atomic paired-update assumption.
+2. Extend the leakage specification if targeting Hamming distance, separate observations, or physical power.
+3. Complete the separate random-masking model with distributional security; it is not used by the dual-register processor theorem.
 
 ## Build
 
