@@ -8,6 +8,8 @@ ladder_machine.v
 ladder_machine_tests.v
 state_machine.v
 state_machine_tests.v
+processor_refinement.v
+processor_refinement_tests.v
 two_reg_prob.v
 montgomery_ladder.v
 curve25519.v
