@@ -17,6 +17,7 @@ Prove that the fetch/execute/writeback processor computes the correct Curve25519
 | [ladder_machine.v](ladder_machine.v) | Instruction-level implementation of the full ladder and affine conversion, with correctness and aggregate-register HW proofs. |
 | [curve25519.v](curve25519.v) | Connection to Fiat-Crypto's Curve25519 model and the combined processor correctness/security theorem. |
 | [two_reg_prob.v](two_reg_prob.v) | Two-register masking experiment using ensembles; the aggregate-HW security statement is unfinished. |
+| [quartz/](quartz/README.md) | In-progress integration with the actual Quartz CPU: native word representation, scratch-memory environment, fixed-latency multiplier patch, and processor regressions. No Quartz-wide security theorem yet. |
 | [montgomery_ladder.v](montgomery_ladder.v) | Convenience imports for the core models. |
 | [state_machine_tests.v](state_machine_tests.v), [processor_refinement_tests.v](processor_refinement_tests.v), [ladder_machine_tests.v](ladder_machine_tests.v), [curve25519_tests.v](curve25519_tests.v) | Regression examples, assumption checks, register-coverage and latch tests. |
 | [check.sh](check.sh), [setup_fiat_crypto.sh](setup_fiat_crypto.sh), [_CoqProject](_CoqProject) | Build configuration and pinned Fiat-Crypto dependency setup. |

@@ -1,0 +1,16 @@
+diff --git a/examples/Processor.v b/examples/Processor.v
+--- a/examples/Processor.v
++++ b/examples/Processor.v
+@@ -215,11 +215,7 @@ Module multiplier. Section multiplier.
+ 
+   Definition tick {var} := Fn (fun (st: var State) => quartz_eexpr:(
+      if #st..valid & ! #st..finished then
+-       if !#st..op1 | !#st..op2 then (* zero-skip *)
+-         let st <- #st..finished = true in 
+-         let st <- #st..result = _ 'd 0 in 
+-         return #st
+-       else if #st..nstep ==  ~ (_ 'd 0) then (* == ones: done *)
++       if #st..nstep ==  ~ (_ 'd 0) then (* fixed-latency completion *)
+          let op1 := #st..op1 in               
+          let op2 := #st..op2 in               
+          let st <- #st..finished = true in 
