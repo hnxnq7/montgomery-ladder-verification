@@ -17,7 +17,8 @@ Prove that the fetch/execute/writeback processor computes the correct Curve25519
 | [ladder_machine.v](ladder_machine.v) | Instruction-level implementation of the full ladder and affine conversion, with correctness and aggregate-register HW proofs. |
 | [curve25519.v](curve25519.v) | Connection to Fiat-Crypto's Curve25519 model and the combined processor correctness/security theorem. |
 | [two_reg_prob.v](two_reg_prob.v) | Two-register masking experiment using ensembles; the aggregate-HW security statement is unfinished. |
-| [quartz/](quartz/README.md) | In-progress integration with the actual Quartz CPU: native word representation, scratch-memory environment, fixed-latency multiplier patch, and processor regressions. No Quartz-wide security theorem yet. |
+| [masking/](masking/README.md) | Infotheo distributional masking: arbitrary-width words, additive shares, shared arithmetic, and a correct shared LadderStep with secret-independent final output shares. No intermediate-trace security claim. |
+| [quartz/](quartz/README.md) | Actual Quartz CPU integration, scratch memory, fixed-latency multiplier patch, and an MMIO-connected LadderStep accelerator. Accelerator arithmetic has regression tests, not a universal correctness proof; no Quartz-wide security theorem yet. |
 | [montgomery_ladder.v](montgomery_ladder.v) | Convenience imports for the core models. |
 | [state_machine_tests.v](state_machine_tests.v), [processor_refinement_tests.v](processor_refinement_tests.v), [ladder_machine_tests.v](ladder_machine_tests.v), [curve25519_tests.v](curve25519_tests.v) | Regression examples, assumption checks, register-coverage and latch tests. |
 | [check.sh](check.sh), [setup_fiat_crypto.sh](setup_fiat_crypto.sh), [_CoqProject](_CoqProject) | Build configuration and pinned Fiat-Crypto dependency setup. |
@@ -34,6 +35,8 @@ Prove that the fetch/execute/writeback processor computes the correct Curve25519
 
 These results have checked proofs independent of the remaining admitted declarations. The repository as a whole still contains unfinished proofs.
 
+The separate masking development proves `MaskedLadder.correct_and_output_independent`: reconstruction agrees with the generic finite-ring LadderStep formula, and the final four-coordinate vector of designated shares has the same distribution for any inputs. Its final refresh uses independent uniform masks. This result assumes observation of only that final vector, not both shares or intermediate execution; it is not yet connected to the Curve25519 curve theorem or Quartz.
+
 ## Leakage Scope
 
 Complementary registers balance the combined Hamming weight of a value and its bitwise complement. The instruction-level theorem assumes equally weighted bits, atomic paired updates, and observation of the aggregate register HW at instruction boundaries. It assumes the initial pairs are already loaded. It does not establish security for separate register observations, Hamming distance, arithmetic internals, glitches, buses, or physical power.
@@ -46,7 +49,7 @@ The processor models field arithmetic as one Execute-stage operation; it is not 
 
 1. Refine the processor into hardware with explicit arithmetic internals and justify or replace the atomic paired-update assumption.
 2. Extend the leakage specification if targeting Hamming distance, separate observations, or physical power.
-3. Complete the separate random-masking model with distributional security; it is not used by the dual-register processor theorem.
+3. Connect the shared LadderStep to the Curve25519 specification and Quartz, including randomness delivery and a justified execution-level observation model. The masking results are not used by the dual-register processor theorem.
 
 ## Build
 
@@ -57,3 +60,5 @@ bash check.sh
 ```
 
 The script checks the models and tests and sets up the pinned Fiat-Crypto dependencies. A successful build accepts remaining `Admitted` declarations; the test files also print assumptions for the checked results.
+
+The [masking](masking/README.md#build) and [Quartz](quartz/README.md) subprojects use separate pinned environments and check scripts.
