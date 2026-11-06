@@ -7,7 +7,7 @@ for module in ladder_math dual_circuit ladder_machine ladder_machine_tests state
   coqc -Q . "" "$module.v"
 done
 bash setup_fiat_crypto.sh
-for module in curve25519 curve25519_tests; do
+for module in curve25519_math curve25519 curve25519_tests; do
   printf 'Checking %s.v\n' "$module"
   coqc -Q . "" -R .deps/fiat-crypto/src Crypto \
     -Q .deps/fiat-crypto/rewriter/src/Rewriter Rewriter \

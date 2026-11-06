@@ -1,7 +1,7 @@
 From HB Require Import structures.
 From mathcomp Require Import boot order algebra reals.
 From infotheo Require Import fdist.
-From Masking Require Import finite_masking word_masking shared_ladder ladder_distribution.
+From Masking Require Import finite_masking word_masking shared_ladder ladder_distribution shared_power shared_loop.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -48,6 +48,36 @@ rewrite SharedLadder.shared_step_correct !FiniteMasking.split_correct.
 rewrite /SharedLadder.clear_step.
 by congr ((_, _), (_, _)); apply/val_inj; vm_compute.
 Qed.
+
+Section LoopRegressions.
+Variable K : finComNzRingType.
+Variable R : realType.
+
+Example square_samples_operand_once (a : FiniteMasking.shares K) :
+  SharedPower.power R (BinNums.xO BinNums.xH) a = SharedPower.multiply R a a.
+Proof. by rewrite /= fdist1bind. Qed.
+
+Example cube_keeps_original_operand (a : FiniteMasking.shares K) :
+  SharedPower.power R (BinNums.xI BinNums.xH) a =
+  SharedPower.multiply R a a >>= (fun b => SharedPower.multiply R a b).
+Proof. by rewrite /= fdist1bind. Qed.
+
+Example final_swap_one (a24 xp : K) :
+  SharedLoop.clear_projective 1 a24 xp (fun _ => true) =
+  (SharedLadder.clear_step a24 xp xp 1 1 0).2.
+Proof. reflexivity. Qed.
+
+Example final_swap_zero (a24 xp : K) :
+  SharedLoop.clear_projective 1 a24 xp (fun _ => false) =
+  (SharedLadder.clear_step a24 xp 1 0 xp 1).1.
+Proof. reflexivity. Qed.
+
+Example descending_bits (a24 xp : K) bits s :
+  SharedLoop.clear_run 2 a24 xp bits s =
+  SharedLoop.clear_iteration a24 xp (bits 0) (SharedLoop.clear_iteration a24 xp (bits 1) s).
+Proof. reflexivity. Qed.
+
+End LoopRegressions.
 
 Print Assumptions FiniteMasking.uniform_add.
 Print Assumptions FiniteMasking.copies_permutation.

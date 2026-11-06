@@ -1,14 +1,5 @@
-Require Import ZArith.
-Require Import Lia.
-Require Import Coq.Vectors.Vector.
-Require Import Coq.Vectors.Fin.
-From stdpp Require Import base.
-From stdpp Require Import bitvector.
-From stdpp Require Import list.
+From Stdlib Require Import ZArith Lia.
 Open Scope Z_scope.
-
-From RecordUpdate Require Import RecordUpdate.
-Import RecordSetNotations.
 
 (* Bounded coordinates only; curve membership is supplied by curve25519.v. *)
 Record AffinePoint {p : Z} := {

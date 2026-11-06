@@ -16,8 +16,9 @@ Prove that the fetch/execute/writeback processor computes the correct Curve25519
 | [processor_refinement.v](processor_refinement.v) | Instruction correspondence and full-loop/affine correctness for continuous processor execution. |
 | [ladder_machine.v](ladder_machine.v) | Instruction-level implementation of the full ladder and affine conversion, with correctness and aggregate-register HW proofs. |
 | [curve25519.v](curve25519.v) | Connection to Fiat-Crypto's Curve25519 model and the combined processor correctness/security theorem. |
+| [curve25519_math.v](curve25519_math.v) | Curve-only Fiat-Crypto bridge, shared by the processor and probabilistic masking proofs. |
 | [two_reg_prob.v](two_reg_prob.v) | Two-register masking experiment using ensembles; the aggregate-HW security statement is unfinished. |
-| [masking/](masking/README.md) | Infotheo distributional masking: arbitrary-width words, additive shares, shared arithmetic, and a correct shared LadderStep with secret-independent final output shares. No intermediate-trace security claim. |
+| [masking/](masking/README.md) | Infotheo distributional masking: arbitrary-width words, shared arithmetic, and a complete shared Curve25519 ladder with correct reconstruction and secret-independent final share Y. No intermediate-trace security claim. |
 | [quartz/](quartz/README.md) | Actual Quartz CPU integration, scratch memory, fixed-latency multiplier patch, and an MMIO-connected LadderStep accelerator. Accelerator arithmetic has regression tests, not a universal correctness proof; no Quartz-wide security theorem yet. |
 | [montgomery_ladder.v](montgomery_ladder.v) | Convenience imports for the core models. |
 | [state_machine_tests.v](state_machine_tests.v), [processor_refinement_tests.v](processor_refinement_tests.v), [ladder_machine_tests.v](ladder_machine_tests.v), [curve25519_tests.v](curve25519_tests.v) | Regression examples, assumption checks, register-coverage and latch tests. |
@@ -35,7 +36,7 @@ Prove that the fetch/execute/writeback processor computes the correct Curve25519
 
 These results have checked proofs independent of the remaining admitted declarations. The repository as a whole still contains unfinished proofs.
 
-The separate masking development proves `MaskedLadder.correct_and_output_independent`: reconstruction agrees with the generic finite-ring LadderStep formula, and the final four-coordinate vector of designated shares has the same distribution for any inputs. Its final refresh uses independent uniform masks. This result assumes observation of only that final vector, not both shares or intermediate execution; it is not yet connected to the Curve25519 curve theorem or Quartz.
+The separate masking development proves `MaskedCurve25519.correct_and_output_independent`: the complete shared loop and affine conversion reconstruct the correct Curve25519 x-coordinate, and the final designated share Y has the same distribution for any two in-range scalars. This reuses Fiat-Crypto's field and curve model. Fresh final masking establishes secrecy only for Y, not both shares or intermediate execution. Refinement to Quartz remains open.
 
 ## Leakage Scope
 
@@ -49,7 +50,7 @@ The processor models field arithmetic as one Execute-stage operation; it is not 
 
 1. Refine the processor into hardware with explicit arithmetic internals and justify or replace the atomic paired-update assumption.
 2. Extend the leakage specification if targeting Hamming distance, separate observations, or physical power.
-3. Connect the shared LadderStep to the Curve25519 specification and Quartz, including randomness delivery and a justified execution-level observation model. The masking results are not used by the dual-register processor theorem.
+3. Refine the shared Curve25519 computation to Quartz, including randomness delivery and a justified execution-level observation model. The masking results are not used by the dual-register processor theorem.
 
 ## Build
 

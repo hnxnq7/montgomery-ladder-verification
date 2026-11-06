@@ -1,6 +1,16 @@
 -Q . Masking
+-Q ../.deps/masking-curve ""
+-R ../.deps/masking-curve/.deps/fiat-crypto/src Crypto
+-Q ../.deps/masking-curve/.deps/fiat-crypto/rewriter/src/Rewriter Rewriter
+-R ../.deps/masking-curve/.deps/fiat-crypto/coqprime/src/Coqprime Coqprime
 finite_masking.v
 word_masking.v
 shared_ladder.v
 ladder_distribution.v
+shared_power.v
+shared_loop.v
 tests.v
+fiat_field.v
+ladder_bridge.v
+masked_curve25519.v
+curve_tests.v

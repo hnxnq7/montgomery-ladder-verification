@@ -29,6 +29,22 @@ Lemma map_bind (A B C : finType) (d : R.-fdist A)
   fdistmap g (d >>= f) = d >>= (fun a => fdistmap g (f a)).
 Proof. exact: fdistbindA. Qed.
 
+Lemma bind_map (A B C : finType) (d : R.-fdist A) (f : A -> B) (g : B -> R.-fdist C) :
+  fdistmap f d >>= g = d >>= (fun a => g (f a)).
+Proof.
+rewrite /fdistmap fdistbindA; congr (fdistbind d _).
+by apply/boolp.funeqP => a; rewrite fdist1bind.
+Qed.
+
+Lemma map_bind_pure (A B C : finType) (d : R.-fdist A) (f : A -> R.-fdist B)
+    (observe : B -> C) (next : A -> C) :
+  (forall a, fdistmap observe (f a) = fdist1 (next a)) ->
+  fdistmap observe (d >>= f) = fdistmap next d.
+Proof.
+move=> H; rewrite map_bind /fdistmap; congr (fdistbind d _).
+by apply/boolp.funeqP => a; exact: H.
+Qed.
+
 Section AdditiveShares.
 Variable K : finZmodType.
 
@@ -124,6 +140,15 @@ Definition refresh (a : shares) (r : K) : shares :=
 
 Lemma refresh_correct a r : reconstruct (refresh a r) = reconstruct a.
 Proof. by rewrite /reconstruct /refresh /= addrACA subrr addr0. Qed.
+
+Lemma refresh_distribution_correct a :
+  fdistmap reconstruct (fdistmap (refresh a) uniform) = fdist1 (reconstruct a).
+Proof.
+rewrite fdistmap_comp.
+have -> : reconstruct \o refresh a = (fun _ => reconstruct a).
+  by apply/boolp.funeqP => r; exact: refresh_correct.
+exact: map_constant.
+Qed.
 
 Lemma refreshed_output_uniform a :
   fdistmap (fun r => (refresh a r).2) uniform = uniform.
