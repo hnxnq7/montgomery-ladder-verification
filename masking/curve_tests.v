@@ -3,7 +3,8 @@ From HB Require Import structures.
 From mathcomp Require Import boot order algebra reals.
 From infotheo Require Import fdist.
 From Crypto Require Import Spec.ModularArithmetic Spec.Curve25519.
-From Masking Require Import finite_masking shared_power shared_loop fiat_field ladder_bridge masked_curve25519.
+From Masking Require Import finite_masking shared_power shared_loop fiat_field ladder_bridge masked_curve25519
+  trace_masking ladder_trace leakage_counterexamples.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -46,6 +47,13 @@ Proof. exact (@MaskedCurve25519.correct_and_output_independent R 255 P n1 n2). Q
 
 End Boundaries.
 
+Example checkpoint_trace_zero_one (R : realType) xp :
+  fdistmap (@LadderTrace.observe FiatField.curve25519 255)
+    (MaskedCurve25519.checkpoint_program R 255 xp 0) =
+  fdistmap (@LadderTrace.observe FiatField.curve25519 255)
+    (MaskedCurve25519.checkpoint_program R 255 xp 1).
+Proof. exact (@MaskedCurve25519.checkpoint_trace_independent R 255 xp 0 1). Qed.
+
 Print Assumptions FiatField.ordinal_cancel.
 Print Assumptions LadderBridge.projective_matches_math.
 Print Assumptions SharedPower.power_correct.
@@ -53,3 +61,6 @@ Print Assumptions SharedLoop.projective_correct.
 Print Assumptions MaskedCurve25519.inverse_matches_math.
 Print Assumptions MaskedCurve25519.program_correct.
 Print Assumptions MaskedCurve25519.correct_and_output_independent.
+Print Assumptions MaskingTrace.joint_trace_distribution.
+Print Assumptions LadderTrace.program_erasure.
+Print Assumptions MaskedCurve25519.correct_and_checkpoint_independent.

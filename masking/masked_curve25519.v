@@ -4,7 +4,7 @@ From mathcomp Require Import boot order algebra reals.
 From infotheo Require Import fdist.
 From Crypto Require Import Spec.Curve25519 Arithmetic.PrimeFieldTheorems.
 Require Import ladder_math curve25519_math.
-From Masking Require Import finite_masking shared_power shared_loop fiat_field ladder_bridge.
+From Masking Require Import finite_masking shared_power shared_loop fiat_field ladder_bridge ladder_trace.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -93,6 +93,42 @@ Theorem correct_and_output_independent m (P : Curve25519.M.point) n1 n2 :
 Proof.
 move=> H1 H2; split; first exact: program_correct H1.
 split; [exact: program_correct H2 | exact: output_independent].
+Qed.
+
+Definition checkpoint_program (m : nat) (xp n : Z) :=
+  @LadderTrace.program R K (encode 121666) (encode xp) inverse_exponent m (fun i => bit_i n i).
+
+Lemma checkpoint_erasure m xp n :
+  fdistmap fst (checkpoint_program m xp n) = program m xp n.
+Proof. exact: LadderTrace.program_erasure. Qed.
+
+Theorem checkpoint_program_correct m n (P : Curve25519.M.point) :
+  (0 <= n < 2 ^ Z.of_nat m)%Z ->
+  fdistmap ((@reconstruct K) \o fst) (checkpoint_program m (F.to_Z (Curve25519.M.X0 P)) n) =
+    @fdist1 R K (Curve25519.M.X0 (Curve25519.M.scalarmult n P)).
+Proof.
+move=> Hn; rewrite -(fdistmap_comp (@reconstruct K) fst) checkpoint_erasure.
+exact: program_correct Hn.
+Qed.
+
+(* Observe refreshed loop checkpoints and final Y, not operation internals or control bits. *)
+Theorem checkpoint_trace_independent m xp n1 n2 :
+  fdistmap (@LadderTrace.observe K m) (checkpoint_program m xp n1) =
+  fdistmap (@LadderTrace.observe K m) (checkpoint_program m xp n2).
+Proof. exact: LadderTrace.program_checkpoint_independent. Qed.
+
+Theorem correct_and_checkpoint_independent m (P : Curve25519.M.point) n1 n2 :
+  (0 <= n1 < 2 ^ Z.of_nat m)%Z ->
+  (0 <= n2 < 2 ^ Z.of_nat m)%Z ->
+  fdistmap ((@reconstruct K) \o fst) (checkpoint_program m (F.to_Z (Curve25519.M.X0 P)) n1) =
+    @fdist1 R K (Curve25519.M.X0 (Curve25519.M.scalarmult n1 P)) /\
+  fdistmap ((@reconstruct K) \o fst) (checkpoint_program m (F.to_Z (Curve25519.M.X0 P)) n2) =
+    @fdist1 R K (Curve25519.M.X0 (Curve25519.M.scalarmult n2 P)) /\
+  fdistmap (@LadderTrace.observe K m) (checkpoint_program m (F.to_Z (Curve25519.M.X0 P)) n1) =
+    fdistmap (@LadderTrace.observe K m) (checkpoint_program m (F.to_Z (Curve25519.M.X0 P)) n2).
+Proof.
+move=> H1 H2; split; first exact: checkpoint_program_correct H1.
+split; [exact: checkpoint_program_correct H2 | exact: checkpoint_trace_independent].
 Qed.
 
 End Distribution.

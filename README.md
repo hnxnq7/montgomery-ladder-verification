@@ -4,7 +4,7 @@ Rocq formalization of the Montgomery ladder, complementary-register protection, 
 
 ## Goal
 
-Prove that the fetch/execute/writeback processor computes the correct Curve25519 scalar-multiplication x-coordinate and produces equal modeled leakage traces for any two secret scalars with the same public input. The intended output is released separately from the leakage trace.
+Verify Curve25519 computation and compare dual-storage and masked implementations under a common noisy power-leakage model: the same observer and an explicit execution/repetition budget. Both complete Quartz controller models have combined correctness and leakage theorems. Generated RTL validation remains open for the certified masked instance. Intended output release is separate from the leakage trace.
 
 ## Files
 
@@ -18,8 +18,8 @@ Prove that the fetch/execute/writeback processor computes the correct Curve25519
 | [curve25519.v](curve25519.v) | Connection to Fiat-Crypto's Curve25519 model and the combined processor correctness/security theorem. |
 | [curve25519_math.v](curve25519_math.v) | Curve-only Fiat-Crypto bridge, shared by the processor and probabilistic masking proofs. |
 | [two_reg_prob.v](two_reg_prob.v) | Two-register masking experiment using ensembles; the aggregate-HW security statement is unfinished. |
-| [masking/](masking/README.md) | Infotheo distributional masking: arbitrary-width words, shared arithmetic, and a complete shared Curve25519 ladder with correct reconstruction and secret-independent final share Y. No intermediate-trace security claim. |
-| [quartz/](quartz/README.md) | Actual Quartz CPU integration, scratch memory, fixed-latency multiplier patch, and an MMIO-connected LadderStep accelerator. Accelerator arithmetic has regression tests, not a universal correctness proof; no Quartz-wide security theorem yet. |
+| [masking/](masking/README.md) | Shared Curve25519 correctness, checkpoint secrecy, and quantitative stored-HW bounds for actual masked Quartz execution, with explicit leakage counterexamples. |
+| [quartz/](quartz/README.md) | Actual Quartz CPU integration and a complete dedicated Curve25519 controller with complementary-storage HW trace proofs. Full CPU/MMIO and RTL refinement remain open. |
 | [montgomery_ladder.v](montgomery_ladder.v) | Convenience imports for the core models. |
 | [state_machine_tests.v](state_machine_tests.v), [processor_refinement_tests.v](processor_refinement_tests.v), [ladder_machine_tests.v](ladder_machine_tests.v), [curve25519_tests.v](curve25519_tests.v) | Regression examples, assumption checks, register-coverage and latch tests. |
 | [check.sh](check.sh), [setup_fiat_crypto.sh](setup_fiat_crypto.sh), [_CoqProject](_CoqProject) | Build configuration and pinned Fiat-Crypto dependency setup. |
@@ -36,7 +36,15 @@ Prove that the fetch/execute/writeback processor computes the correct Curve25519
 
 These results have checked proofs independent of the remaining admitted declarations. The repository as a whole still contains unfinished proofs.
 
-The separate masking development proves `MaskedCurve25519.correct_and_output_independent`: the complete shared loop and affine conversion reconstruct the correct Curve25519 x-coordinate, and the final designated share Y has the same distribution for any two in-range scalars. This reuses Fiat-Crypto's field and curve model. Fresh final masking establishes secrecy only for Y, not both shares or intermediate execution. Refinement to Quartz remains open.
+The separate masking development proves `MaskedCurve25519.correct_and_output_independent` and `correct_and_checkpoint_independent`: the complete shared computation reconstructs the correct Curve25519 x-coordinate, and the joint distribution of refreshed LadderStep checkpoints plus final Y is independent of the scalar. Recording checkpoints preserves the original computation. These observations exclude arithmetic internals, control bits, and both-share observations; they are not the full stored-HW contract below.
+
+The [noisy-leakage development](masking/README.md#noisy-channel-milestone) connects fresh arithmetic sharing to actual Quartz execution while retaining state/observation correlations. `QuartzMaskedLadderSecurity.ladder_correct_and_noisy_secure_256` combines correct Curve25519 outputs with TV at most `2^-66` across all 8681 stored-state observations, and `2^-34` for up to `2^32` independent executions. Compilation and full recursive kernel checking passed. It counts every stored controller bit and assumes 256 shares, fresh uniform field coins, a common additive-noise channel, and sufficient capacity to avoid clipping. Combinational, transition, bus, RNG-internal, and separate digital-share observations are excluded. The 256-share RTL is not yet validated; this large reference design is not an efficiency claim.
+
+The Quartz accelerator has universal reduction and field-operation proofs, with `AcceleratorLadderBridge.ladder_step_matches_math` connecting its complete 18-tick computation to the existing mathematical LadderStep. A checked bank-HW counterexample shows why the unprotected core's fixed schedule is insufficient. `ProtectedAcceleratorSecurity.ladder_step_correct_and_secure` adds complementary storage and proves equal register-HW traces under valid initialization and atomic paired updates. The native CPU adapter preserves the protected device bank, but its own registers and interfaces are not covered. See [verification notes](VERIFICATION_NOTES.md) for evidence, the circuit-to-ISA roadmap, and remaining obligations.
+
+`ControllerProtection.protected_ladder_correct_and_secure` extends the dedicated Quartz circuit result to the full 5612-tick scalar loop and affine conversion, connected to Fiat-Crypto's Curve25519 model. All stored controller fields are paired. Generated LadderStep and full-controller RTL pass independent-reference simulation tests, with proved preservation of controller packaging and name sanitization. Formal preservation through the SystemVerilog printer and synthesis remains open.
+
+`QuartzNoiseBridge.protected_curve_correct_and_noisy_secure` combines those actual controller outputs with zero total-variation distance under aggregate stored HW plus independent binomial noise. Its explicit channel bound prevents clipping across all 5613 snapshots, including initialization. The bridge has a separate compatible build: `bash masking/check_quartz_noise.sh`.
 
 ## Leakage Scope
 
@@ -48,9 +56,9 @@ The processor models field arithmetic as one Execute-stage operation; it is not 
 
 ## To Do
 
-1. Refine the processor into hardware with explicit arithmetic internals and justify or replace the atomic paired-update assumption.
-2. Extend the leakage specification if targeting Hamming distance, separate observations, or physical power.
-3. Refine the shared Curve25519 computation to Quartz, including randomness delivery and a justified execution-level observation model. The masking results are not used by the dual-register processor theorem.
+1. Generate and validate the corresponding masked-controller RTL, preserving freshness, stored-state coverage, and output retention. Small-share tests do not certify the 256-share instance. The dual-storage controller already has generated and simulation-validated RTL; paired updates remain an explicit model assumption.
+2. Finish the recursive check of `QuartzComparison.common_budget_correct_and_secure`, which puts both implementations under identical observation and repetition budgets. It compiles; its kernel recheck stopped at the memory-pressure guard.
+3. Agree on secret/public classification and output release before extending the processor's ISA contract to general programs. Hamming distance, glitches, and physical calibration remain separate obligations.
 
 ## Build
 

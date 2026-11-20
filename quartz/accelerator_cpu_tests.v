@@ -1,5 +1,5 @@
 From quartz.lang Require Import domain Syntax.
-From LadderQuartz Require Import field_words accelerator accelerator_cpu.
+From LadderQuartz Require Import field_words accelerator protected_accelerator accelerator_cpu.
 From Stdlib Require Import BinInt Bits List.
 Import ListNotations QuartzAcceleratorCPU.
 Import (coercions) type domain.Zmod.
@@ -39,14 +39,14 @@ Module QuartzAcceleratorCPUTests.
     start_device (flat_map (Curve25519Words.encode 8)
       [LadderAccelerator.prime-1; LadderAccelerator.prime-2; LadderAccelerator.prime-3;
        LadderAccelerator.prime-4; LadderAccelerator.prime-5]) =
-    LadderAccelerator.initial (LadderAccelerator.prime-1) (LadderAccelerator.prime-2)
+    ProtectedAccelerator.initial (LadderAccelerator.prime-1) (LadderAccelerator.prime-2)
       (LadderAccelerator.prime-3) (LadderAccelerator.prime-4) (LadderAccelerator.prime-5).
   Proof. vm_compute. reflexivity. Qed.
 
   Example reset_discards_completed_output :
     fst (access {| core := (initial 5).(core); scratch := (initial 5).(scratch);
       inputs := repeat (bits.of_Z 32 99) 40;
-      device := LadderAccelerator.run 18 (LadderAccelerator.initial 9 1 0 9 1);
+      device := ProtectedAccelerator.run 18 (ProtectedAccelerator.initial 9 1 0 9 1);
       response_pending := None |} (bits.of_Z 32 4256) (bits.of_Z 32 0) true) = initial 5.
   Proof. vm_compute. reflexivity. Qed.
 

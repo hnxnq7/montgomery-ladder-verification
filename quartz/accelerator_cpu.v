@@ -1,6 +1,6 @@
 From quartz.lang Require Import domain Syntax.
 From quartz.examples Require Import Processor.
-From LadderQuartz Require Import memory field_words accelerator.
+From LadderQuartz Require Import memory field_words accelerator protected_accelerator.
 From Stdlib Require Import BinInt Bits List.
 Import InterfaceExample ListNotations.
 Import (coercions) type domain.Zmod.
@@ -20,23 +20,23 @@ Module QuartzAcceleratorCPU.
     core : Core;
     scratch : list (bits 32);
     inputs : list (bits 32);
-    device : LadderAccelerator.State;
+    device : ProtectedAccelerator.State;
     response_pending : option cpu.Mem_resp_t
   }.
 
   Definition input_field (words : list (bits 32)) (index : nat) : bits 255 :=
     bits.of_Z 255 (Curve25519Words.decode (firstn 8 (skipn (8*index) words))).
 
-  Definition start_device (words : list (bits 32)) : LadderAccelerator.State :=
-    fn.interp LadderAccelerator.start (LadderAccelerator.input_rep
+  Definition start_device (words : list (bits 32)) : ProtectedAccelerator.State :=
+    fn.interp ProtectedAccelerator.start (LadderAccelerator.input_rep
       {| LadderAccelerator.in_x1 := input_field words 0;
          LadderAccelerator.in_x2 := input_field words 1;
          LadderAccelerator.in_z2 := input_field words 2;
          LadderAccelerator.in_x3 := input_field words 3;
          LadderAccelerator.in_z3 := input_field words 4 |}).
 
-  Definition output_words (device : LadderAccelerator.State) : list (bits 32) :=
-    let '((x2,z2),(x3,z3)) := fn.interp LadderAccelerator.output device in
+  Definition output_words (device : ProtectedAccelerator.State) : list (bits 32) :=
+    let '((x2,z2),(x3,z3)) := fn.interp ProtectedAccelerator.output device in
     flat_map (fun x => Curve25519Words.encode 8 (Zmod.unsigned x)) [x2;z2;x3;z3].
 
   (* Input words 0..39; command 40; status 41; output words 42..73. *)
@@ -50,12 +50,12 @@ Module QuartzAcceleratorCPU.
             then repeat (bits.of_Z 32 0) 40 else s.(inputs) in
         let dev := if Nat.eqb index 40 then
           if Zmod.unsigned data =? 1 then start_device words
-          else if Zmod.unsigned data =? 0 then fn.interp LadderAccelerator.reset s.(device)
+          else if Zmod.unsigned data =? 0 then fn.interp ProtectedAccelerator.reset s.(device)
           else s.(device) else s.(device) in
         ({| core := s.(core); scratch := s.(scratch); inputs := words;
             device := dev; response_pending := s.(response_pending) |}, bits.of_Z 32 0)
       else
-        let ready := Zmod.nonzero (fn.interp LadderAccelerator.ready s.(device)) in
+        let ready := Zmod.nonzero (fn.interp ProtectedAccelerator.ready s.(device)) in
         let value := if Nat.eqb index 41 then bits.of_Z 32 (if ready then 1 else 0)
           else if andb ready (andb (Nat.leb 42 index) (Nat.ltb index 74))
             then nth (index-42) (output_words s.(device)) (bits.of_Z 32 0)
@@ -87,7 +87,7 @@ Module QuartzAcceleratorCPU.
 
   Definition tick (program : list (bits 32)) (s : state) : state :=
     let s := service_mmio {| core := s.(core); scratch := s.(scratch); inputs := s.(inputs);
-      device := fn.interp LadderAccelerator.tick s.(device); response_pending := s.(response_pending) |} in
+      device := fn.interp ProtectedAccelerator.tick s.(device); response_pending := s.(response_pending) |} in
     let memory := QuartzMemory.service_data
       {| QuartzMemory.core := s.(core); QuartzMemory.scratch := s.(scratch) |} in
     let core := QuartzMemory.service_instruction program memory.(QuartzMemory.core) in
@@ -101,6 +101,6 @@ Module QuartzAcceleratorCPU.
   Definition initial (words : nat) : state :=
     {| core := type.default Core; scratch := repeat (bits.of_Z 32 0) words;
        inputs := repeat (bits.of_Z 32 0) 40;
-       device := fn.interp LadderAccelerator.reset (type.default LadderAccelerator.State);
+       device := fn.interp ProtectedAccelerator.reset (type.default ProtectedAccelerator.State);
        response_pending := None |}.
 End QuartzAcceleratorCPU.
